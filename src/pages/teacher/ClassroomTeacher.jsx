@@ -1,0 +1,459 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useApp } from '../../context/AppContext'
+import { Avatar } from '../../components/Sidebar'
+import { summarizeTranscription, identifyTopics, partialSummary } from '../../services/geminiService'
+
+const QUICK_ACTIONS = ['¿Puede parar, profesor?', '¿Puede repetir?', '¿Puede ir más despacio?', 'No escucho']
+
+export default function ClassroomTeacher({ classId }) {
+  const {
+    currentUser, users, courses, classes,
+    getClassById, getCourseById,
+    appendTranscription, clearTranscription, saveTranscription, setSummary,
+    answerQuestion, deactivateClass, setActivePage, setActiveClassId,
+  } = useApp()
+
+  const cls    = getClassById(classId)
+  const course  = cls ? getCourseById(cls.courseId) : null
+
+  // Transcription state
+  const [isRecording, setIsRecording] = useState(false)
+  const [isPaused, setIsPaused]        = useState(false)
+  const [interimText, setInterimText]  = useState('')
+  const recognitionRef                  = useRef(null)
+  const transcriptBottomRef            = useRef(null)
+
+  // AI state
+  const [aiMessages, setAiMessages]  = useState([])
+  const [aiInput, setAiInput]        = useState('')
+  const [aiLoading, setAiLoading]    = useState(false)
+  const [aiTopics, setAiTopics]      = useState([])
+  const [showAI, setShowAI]          = useState(false)
+
+  // Timer
+  const [elapsed, setElapsed]  = useState(0)
+  const timerRef               = useRef(null)
+
+  // Questions tab
+  const [qTab, setQTab]  = useState('pending')
+
+  // Scroll transcription to bottom
+  useEffect(() => {
+    transcriptBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [cls?.transcription?.length])
+
+  // Timer
+  useEffect(() => {
+    timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(timerRef.current)
+  }, [])
+  const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+
+  // Web Speech API setup
+  const startRecognition = useCallback(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) { alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.'); return }
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous    = true
+    recognition.interimResults = true
+    recognition.lang          = 'es-ES'
+    recognitionRef.current    = recognition
+
+    recognition.onresult = (event) => {
+      let interim = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          const text = result[0].transcript.trim()
+          if (text) {
+            const now = new Date()
+            appendTranscription(classId, {
+              text,
+              timestamp: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
+              isFinal: true,
+            })
+          }
+        } else { interim += result[0].transcript }
+      }
+      setInterimText(interim)
+    }
+
+    recognition.onerror = (e) => {
+      if (e.error === 'not-allowed') alert('Permiso de micrófono denegado. Permite el acceso en tu navegador.')
+      else if (e.error !== 'aborted') console.error('Speech error:', e.error)
+    }
+
+    recognition.onend = () => {
+      // Auto-restart if still recording and not paused
+      if (recognitionRef.current === recognition && isRecording && !isPaused) {
+        try { recognition.start() } catch {}
+      }
+    }
+
+    recognition.start()
+    setIsRecording(true)
+    setIsPaused(false)
+  }, [classId, appendTranscription, isRecording, isPaused])
+
+  const stopRecognition = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+    setIsRecording(false)
+    setIsPaused(false)
+    setInterimText('')
+  }
+
+  const togglePause = () => {
+    if (isPaused) {
+      setIsPaused(false)
+      startRecognition()
+    } else {
+      setIsPaused(true)
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null
+        recognitionRef.current.stop()
+      }
+      setInterimText('')
+    }
+  }
+
+  const handleClear = () => {
+    if (!window.confirm('¿Limpiar toda la transcripción?')) return
+    stopRecognition()
+    clearTranscription(classId)
+  }
+
+  const handleSave = () => {
+    saveTranscription(classId)
+    stopRecognition()
+    alert('✅ Transcripción guardada correctamente.')
+  }
+
+  const handleEndClass = () => {
+    if (!window.confirm('¿Finalizar la clase? Se guardará la transcripción automáticamente.')) return
+    saveTranscription(classId)
+    stopRecognition()
+    deactivateClass(classId)
+    setActiveClassId(null)
+    setActivePage('dashboard')
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => { stopRecognition(); clearInterval(timerRef.current) }, [])
+
+  // AI handlers
+  const getFullText = () => (cls?.transcription || []).map(s => s.text).join(' ')
+
+  const handleAITopics = async () => {
+    const text = getFullText()
+    if (!text) { alert('Aún no hay transcripción para analizar.'); return }
+    setAiLoading(true)
+    const topics = await identifyTopics(text)
+    setAiTopics(topics.split('\n').filter(Boolean))
+    setAiLoading(false)
+  }
+
+  const handlePartialSummary = async () => {
+    const text = getFullText()
+    if (!text) { alert('Aún no hay transcripción.'); return }
+    setShowAI(true)
+    setAiLoading(true)
+    setAiMessages(prev => [...prev, { role: 'user', text: '📋 Resumen parcial de lo explicado hasta ahora' }])
+    const res = await partialSummary(text)
+    setAiMessages(prev => [...prev, { role: 'ai', text: res }])
+    setAiLoading(false)
+  }
+
+  const handleFinalSummary = async () => {
+    const text = getFullText()
+    if (!text) { alert('Sin transcripción para resumir.'); return }
+    setShowAI(true)
+    setAiLoading(true)
+    setAiMessages(prev => [...prev, { role: 'user', text: '📝 Generar resumen completo de la clase' }])
+    const res = await summarizeTranscription(text)
+    setAiMessages(prev => [...prev, { role: 'ai', text: res }])
+    setSummary(classId, res)
+    setAiLoading(false)
+  }
+
+  const handleAIAsk = async () => {
+    if (!aiInput.trim()) return
+    const q = aiInput.trim()
+    setAiInput('')
+    setShowAI(true)
+    setAiMessages(prev => [...prev, { role: 'user', text: q }])
+    setAiLoading(true)
+    const { askAboutTranscription } = await import('../../services/geminiService')
+    const res = await askAboutTranscription(getFullText(), q)
+    setAiMessages(prev => [...prev, { role: 'ai', text: res }])
+    setAiLoading(false)
+  }
+
+  if (!cls) return <div style={{ padding: 40 }}>Clase no encontrada.</div>
+
+  const participants = (cls.participantIds || []).map(id => users.find(u => u.id === id)).filter(Boolean)
+  const pendingQ     = (cls.questions || []).filter(q => q.status === 'pending')
+  const answeredQ    = (cls.questions || []).filter(q => q.status === 'answered')
+  const displayQ     = qTab === 'pending' ? pendingQ : answeredQ
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Top header */}
+      <div className="class-topbar">
+        <div className="class-topbar-left">
+          <div className="logo-mark">🎓</div>
+          <div>
+            <div className="class-topbar-name">{course?.name || 'Clase'}</div>
+            <div className="class-topbar-sub" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="badge badge-live" style={{ fontSize: 9 }}>● EN VIVO</span>
+              <span>Sesión activa · {fmt(elapsed)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="class-topbar-right">
+          <div style={{ display: 'flex', gap: -8 }}>
+            {participants.slice(0, 3).map(u => <Avatar key={u.id} user={u} size="sm" style={{ border: '2px solid white', marginLeft: -6 }} />)}
+            {participants.length > 3 && <div className="avatar avatar-sm" style={{ background: '#9CA3AF', border: '2px solid white', marginLeft: -6 }}>+{participants.length - 3}</div>}
+          </div>
+          <button className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            ⚙️
+          </button>
+          <button className="btn btn-danger" onClick={handleEndClass}>↩ Finalizar Clase</button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="classroom-layout" style={{ flex: 1 }}>
+        {/* Left: Video + Transcription */}
+        <div className="classroom-main">
+          {/* Video area */}
+          <div className="video-area">
+            <div className="video-overlay-info">
+              <Avatar user={currentUser} size="sm" />
+              <div>
+                <div className="prof-name">{currentUser.name}</div>
+                <div className="prof-sub">Cámara principal · HD</div>
+              </div>
+            </div>
+
+            <div className="video-placeholder">
+              <div className="video-placeholder-icon">🎥</div>
+              <div className="video-placeholder-text">
+                {isRecording ? (isPaused ? '⏸ Grabación pausada' : '🔴 Transcripción activa') : 'Inicia la transcripción abajo'}
+              </div>
+            </div>
+
+            <div className="video-controls">
+              <button className={`video-ctrl-btn ${isRecording && !isPaused ? 'active' : ''}`} title="Micrófono">🎤</button>
+              <button className="video-ctrl-btn" title="Cámara">📹</button>
+              <button
+                className={`video-ctrl-btn ${isRecording && !isPaused ? 'recording' : ''}`}
+                title={isRecording ? 'Grabando' : 'Iniciar grabación'}
+                onClick={isRecording ? stopRecognition : startRecognition}
+              >
+                {isRecording && !isPaused ? '⏹' : '⏺'}
+              </button>
+              <button className="video-ctrl-btn" title="Compartir pantalla">🖥️</button>
+            </div>
+          </div>
+
+          {/* Transcription panel */}
+          <div className="transcription-panel">
+            <div className="transcription-header">
+              <div className="transcription-title">
+                <span style={{ background: 'var(--primary-bg)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>📝</span>
+                Transcripción en Tiempo Real
+                {isRecording && !isPaused && (
+                  <span style={{ animation: 'pulse 1s infinite', color: 'var(--danger)', fontSize: 12 }}>● grabando</span>
+                )}
+              </div>
+              <div className="transcription-controls">
+                {!isRecording
+                  ? <button className="btn btn-primary btn-sm" onClick={startRecognition}>▶ Iniciar</button>
+                  : <>
+                      <button className="btn btn-secondary btn-sm" onClick={togglePause}>{isPaused ? '▶ Reanudar' : '⏸ Pausar'}</button>
+                      <button className="btn btn-secondary btn-sm" onClick={handleClear}>🗑 Limpiar</button>
+                      <button className="btn btn-success btn-sm" onClick={handleSave}>💾 Guardar</button>
+                    </>
+                }
+              </div>
+            </div>
+
+            <div className="transcription-body">
+              {(cls.transcription || []).length === 0 && !interimText ? (
+                <div className="transcript-empty">
+                  {isRecording ? '🎤 Escuchando... habla para que aparezca la transcripción' : 'Presiona ▶ Iniciar para comenzar la transcripción de voz en tiempo real'}
+                </div>
+              ) : (
+                <>
+                  {(cls.transcription || []).map(seg => (
+                    <div className="transcript-segment" key={seg.id}>
+                      <span className="transcript-time">{seg.timestamp}</span>
+                      <span className="transcript-text">{seg.text}</span>
+                    </div>
+                  ))}
+                  {interimText && (
+                    <div className="transcript-segment">
+                      <span className="transcript-time" style={{ color: 'var(--text-muted)' }}>…</span>
+                      <span className="transcript-text current">{interimText}<span className="cursor-blink" /></span>
+                    </div>
+                  )}
+                </>
+              )}
+              <div ref={transcriptBottomRef} />
+            </div>
+          </div>
+
+          {/* AI Panel */}
+          {showAI && (
+            <div style={{ padding: '0 20px 20px' }}>
+              <div className="ai-panel">
+                <div className="ai-panel-header">
+                  <div className="ai-panel-title">🤖 Asistente IA — Análisis de clase</div>
+                  <div className="ai-panel-actions">
+                    <button className="btn btn-sm btn-outline" onClick={handleAITopics}>🏷️ Temas</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowAI(false)}>✕</button>
+                  </div>
+                </div>
+                <div className="ai-panel-body">
+                  {aiMessages.map((m, i) => (
+                    <div key={i} className={`ai-message ${m.role}`}>
+                      {m.role === 'ai' ? <><strong>🤖 IA:</strong> {m.text}</> : <><strong>👨‍🏫 Tú:</strong> {m.text}</>}
+                    </div>
+                  ))}
+                  {aiLoading && (
+                    <div className="ai-message loading">
+                      <span className="ai-dot" /><span className="ai-dot" /><span className="ai-dot" />
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>Analizando transcripción…</span>
+                    </div>
+                  )}
+                </div>
+                {aiTopics.length > 0 && (
+                  <div className="ai-topics">
+                    <div className="ai-topics-title">Temas identificados</div>
+                    {aiTopics.map((t, i) => <span key={i} className="ai-topic-chip">{t.replace('• ', '')}</span>)}
+                  </div>
+                )}
+                <div className="ai-input-row">
+                  <input className="form-input" style={{ flex: 1 }} placeholder="Pregunta a la IA sobre la transcripción..." value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAIAsk()} />
+                  <button className="chat-send-btn" onClick={handleAIAsk}>➤</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI quick buttons */}
+          <div style={{ padding: '0 20px 16px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-sm btn-outline" onClick={() => setShowAI(v => !v)}>🤖 {showAI ? 'Ocultar' : 'Abrir'} IA</button>
+            <button className="btn btn-sm btn-outline" onClick={handlePartialSummary}>📋 Resumen parcial</button>
+            <button className="btn btn-sm btn-outline" onClick={handleFinalSummary}>📝 Resumen final</button>
+            <button className="btn btn-sm btn-outline" onClick={handleAITopics}>🏷️ Identificar temas</button>
+          </div>
+
+          {/* Status bar */}
+          <div className="status-bar">
+            <div className="status-dot">{isRecording && !isPaused ? 'Conexión estable · transcripción activa' : isPaused ? 'Transcripción pausada' : 'Transcripción inactiva'}</div>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <span>🎓 Clase: {cls.title}</span>
+              <span>⏱️ {fmt(elapsed)}</span>
+              {cls.transcription?.length > 0 && <span>📝 {cls.transcription.length} segmentos</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Sidebar */}
+        <div className="classroom-sidebar">
+          {/* Participants */}
+          <div className="participants-panel">
+            <div className="participants-header">
+              <div className="participants-title">👥 Participantes</div>
+              <span className="participants-count">{participants.length}</span>
+            </div>
+            <div className="participants-list">
+              {/* Teacher (self) */}
+              <div className="participant-item">
+                <Avatar user={currentUser} size="sm" />
+                <div className="participant-info">
+                  <div className="participant-name">{currentUser.name}</div>
+                  <div className="participant-sub">Host · Profesor</div>
+                </div>
+                <div className="participant-icons">🎤 📹</div>
+              </div>
+              {/* Students */}
+              {participants.map(u => (
+                <div className="participant-item" key={u.id}>
+                  <Avatar user={u} size="sm" />
+                  <div className="participant-info">
+                    <div className="participant-name">{u.name}</div>
+                    <div className="participant-sub">Estudiante</div>
+                  </div>
+                  <div className="participant-icons">🎤</div>
+                </div>
+              ))}
+              {participants.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
+                  Sin estudiantes conectados
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Questions received */}
+          <div className="chat-panel">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexShrink: 0 }}>
+              <button className={`tab-btn ${qTab === 'pending' ? 'active' : ''}`} style={{ flex: 1 }} onClick={() => setQTab('pending')}>
+                Pendientes <span className="tab-count">{pendingQ.length}</span>
+              </button>
+              <button className={`tab-btn ${qTab === 'answered' ? 'active' : ''}`} style={{ flex: 1 }} onClick={() => setQTab('answered')}>
+                Respondidas <span className="tab-count">{answeredQ.length}</span>
+              </button>
+            </div>
+
+            <div className="chat-messages">
+              {displayQ.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                  {qTab === 'pending' ? 'Sin preguntas pendientes' : 'Sin preguntas respondidas'}
+                </div>
+              ) : displayQ.map(q => (
+                <div key={q.id} className={`question-card ${q.status}`}>
+                  <div className="question-card-header">
+                    <div className="question-card-user">
+                      <div className="avatar avatar-sm" style={{ background: '#7C3AED', color: 'white', fontSize: 10, fontWeight: 700, width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {q.userAvatar}
+                      </div>
+                      <div>
+                        <div className="question-user-name" style={{ fontSize: 12 }}>{q.userName}</div>
+                        <div className="question-user-sub">{new Date(q.sentAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                    </div>
+                    <span className={`badge ${q.status === 'pending' ? 'badge-warning' : 'badge-success'}`} style={{ fontSize: 9 }}>
+                      {q.status === 'pending' ? 'PENDIENTE' : '✓ RESPONDIDA'}
+                    </span>
+                  </div>
+                  <div className="question-text">{q.text}</div>
+                  {q.status === 'pending' && (
+                    <div className="question-actions">
+                      <button className="btn btn-sm btn-success" onClick={() => answerQuestion(classId, q.id)}>✓ Marcar respondida</button>
+                    </div>
+                  )}
+                  {q.status === 'answered' && (
+                    <div className="question-answered-note">✓ Respondida en clase</div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Quick reply preview / chat */}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              💬 Los estudiantes pueden enviar mensajes rápidos y preguntas desde su pantalla
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
