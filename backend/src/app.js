@@ -1,10 +1,12 @@
 const express = require('express');
 const cors    = require('cors');
 
-const userRoutes    = require('./routes/userRoutes');
-const courseRoutes  = require('./routes/courseRoutes');
-const classRoutes   = require('./routes/classRoutes');
-const teacherRoutes = require('./routes/teacherRoutes');
+const userRoutes     = require('./routes/userRoutes');
+const courseRoutes   = require('./routes/courseRoutes');
+const classRoutes    = require('./routes/classRoutes');
+const teacherRoutes  = require('./routes/teacherRoutes');
+const studentRoutes  = require('./routes/studentRoutes');
+const authRoutes     = require('./routes/authRoutes');
 
 const app = express();
 
@@ -13,10 +15,12 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 
 // ── API Routes ────────────────────────────────────────────────────────────────
+app.use('/api/auth',     authRoutes);
 app.use('/api/users',    userRoutes);
 app.use('/api/courses',  courseRoutes);
 app.use('/api/classes',  classRoutes);
 app.use('/api/teachers', teacherRoutes);
+app.use('/api/students', studentRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

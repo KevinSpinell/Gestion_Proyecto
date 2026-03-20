@@ -12,8 +12,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    await new Promise(r => setTimeout(r, 600)) // simulate network
-    const result = login(form.username, form.password)
+    const result = await login(form.username, form.password)
     if (!result.success) setError(result.error)
     setLoading(false)
   }

@@ -128,16 +128,51 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('storage', handler)
   }, [])
 
-  // ── AUTH ───────────────────────────────────
-  // DB STUB: replace with → POST /api/auth/login
-  const login = (username, password) => {
-    const user = users.find(u => u.username === username && u.password === password)
-    if (user) {
-      setCurrentUser(user)
-      localStorage.setItem('classai_session', JSON.stringify(user))
-      return { success: true, user }
+  // ── AUTH ───────────────────────────────────────────────────────────────────
+  // POST /api/auth/login — checks User → Teacher → Student with aprobado guard
+  const login = async (identifier, password) => {
+    // ── Seed-data shortcut (admin / demo accounts not yet in MongoDB) ─────────
+    // Try this first so demo accounts always work regardless of backend state.
+    const seedUser = users.find(
+      u => (u.username === identifier || u.email === identifier) && u.password === password
+    )
+
+    try {
+      const res = await fetch('http://localhost:3001/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+      })
+      const json = await res.json()
+
+      // 403 = account blocked (aprobado=false / inactivo) — never fall through to seed
+      if (res.status === 403) return { success: false, error: json.message }
+
+      if (res.ok) {
+        // Normalize _id → id so the rest of the app works unchanged
+        const user = { ...json, id: json.id || json._id }
+        setCurrentUser(user)
+        localStorage.setItem('classai_session', JSON.stringify(user))
+        return { success: true, user }
+      }
+
+      // 401 from backend — user not in MongoDB yet → try seed data
+      if (seedUser) {
+        setCurrentUser(seedUser)
+        localStorage.setItem('classai_session', JSON.stringify(seedUser))
+        return { success: true, user: seedUser }
+      }
+      return { success: false, error: 'Credenciales incorrectas' }
+
+    } catch {
+      // ── Network error fallback ─────────────────────────────────────────────
+      if (seedUser) {
+        setCurrentUser(seedUser)
+        localStorage.setItem('classai_session', JSON.stringify(seedUser))
+        return { success: true, user: seedUser }
+      }
+      return { success: false, error: 'No se pudo conectar al servidor' }
     }
-    return { success: false, error: 'Credenciales incorrectas' }
   }
 
   const logout = () => {
