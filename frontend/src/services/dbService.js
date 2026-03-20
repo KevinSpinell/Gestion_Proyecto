@@ -5,20 +5,29 @@
 //  Then fill in these functions calling the real models.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * CONNECTION STUB
- * Replace with:
- *   import mongoose from 'mongoose'
- *   const MONGO_URI = import.meta.env.VITE_MONGO_URI
- *   mongoose.connect(MONGO_URI)
- */
-export const DB_CONFIG = {
-  // Local:  'mongodb://localhost:27017/classai'
-  // Atlas:  'mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/classai'
-  uri: import.meta.env.VITE_MONGO_URI || null,
-  isConnected: false,
+const { MongoClient, ServerApiVersion } = require('mongodb');
+const uri = "mongodb+srv://db_devolopers_project:AyLuVLS9oe8dQ9uq@clusterproyect0.du8akfa.mongodb.net/?appName=ClusterProyect0";
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+async function run() {
+  try {
+    // Connect the client to the server	(optional starting in v4.7)
+    await client.connect();
+    // Send a ping to confirm a successful connection
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  } finally {
+    // Ensures that the client will close when you finish/error
+    await client.close();
+  }
 }
-
+run().catch(console.dir);
 // ─────────────────────────────────────────────
 //  SCHEMAS (Mongoose model definitions to add)
 // ─────────────────────────────────────────────
@@ -98,17 +107,17 @@ export const Class  = mongoose.model('Class',  ClassSchema)
 
 export const UserService = {
   /** @returns {Promise<User[]>} */
-  getAll:    async () => { /* return await User.find() */ },
+  getAll: async () => { /* return await User.find() */ },
   /** @returns {Promise<User>} */
-  getById:   async (id) => { /* return await User.findById(id) */ },
+  getById: async (id) => { /* return await User.findById(id) */ },
   /** @returns {Promise<User>} */
-  create:    async (data) => { /* return await User.create(data) */ },
+  create: async (data) => { /* return await User.create(data) */ },
   /** @returns {Promise<User>} */
-  update:    async (id, data) => { /* return await User.findByIdAndUpdate(id, data, { new: true }) */ },
+  update: async (id, data) => { /* return await User.findByIdAndUpdate(id, data, { new: true }) */ },
   /** @returns {Promise<void>} */
-  delete:    async (id) => { /* await User.findByIdAndDelete(id) */ },
+  delete: async (id) => { /* await User.findByIdAndDelete(id) */ },
   /** @returns {Promise<User|null>} */
-  login:     async (username, password) => {
+  login: async (username, password) => {
     /* const user = await User.findOne({ username })
        if (!user || !bcrypt.compareSync(password, user.password)) return null
        return user */
@@ -116,55 +125,55 @@ export const UserService = {
 }
 
 export const CourseService = {
-  getAll:         async () => { /* return await Course.find().populate('teacherId', 'name email') */ },
-  getById:        async (id) => { /* return await Course.findById(id) */ },
-  getByTeacher:   async (teacherId) => { /* return await Course.find({ teacherId }) */ },
-  getByStudent:   async (studentId) => { /* return await Course.find({ studentIds: studentId }) */ },
-  create:         async (data) => { /* return await Course.create(data) */ },
-  update:         async (id, data) => { /* return await Course.findByIdAndUpdate(id, data, { new: true }) */ },
-  delete:         async (id) => { /* await Course.findByIdAndDelete(id) */ },
-  enrollStudent:  async (courseId, studentId) => {
+  getAll: async () => { /* return await Course.find().populate('teacherId', 'name email') */ },
+  getById: async (id) => { /* return await Course.findById(id) */ },
+  getByTeacher: async (teacherId) => { /* return await Course.find({ teacherId }) */ },
+  getByStudent: async (studentId) => { /* return await Course.find({ studentIds: studentId }) */ },
+  create: async (data) => { /* return await Course.create(data) */ },
+  update: async (id, data) => { /* return await Course.findByIdAndUpdate(id, data, { new: true }) */ },
+  delete: async (id) => { /* await Course.findByIdAndDelete(id) */ },
+  enrollStudent: async (courseId, studentId) => {
     /* return await Course.findByIdAndUpdate(courseId, { $addToSet: { studentIds: studentId } }, { new: true }) */
   },
-  unenrollStudent:async (courseId, studentId) => {
+  unenrollStudent: async (courseId, studentId) => {
     /* return await Course.findByIdAndUpdate(courseId, { $pull: { studentIds: studentId } }, { new: true }) */
   },
 }
 
 export const ClassService = {
-  getAll:           async () => { /* return await Class.find().populate('courseId') */ },
-  getById:          async (id) => { /* return await Class.findById(id) */ },
-  getByCourse:      async (courseId) => { /* return await Class.find({ courseId }) */ },
-  getActive:        async () => { /* return await Class.find({ isActive: true }).populate('courseId') */ },
-  create:           async (data) => { /* return await Class.create(data) */ },
-  activate:         async (id) => { /* return await Class.findByIdAndUpdate(id, { isActive: true }, { new: true }) */ },
-  deactivate:       async (id) => { /* return await Class.findByIdAndUpdate(id, { isActive: false, participantIds: [] }, { new: true }) */ },
+  getAll: async () => { /* return await Class.find().populate('courseId') */ },
+  getById: async (id) => { /* return await Class.findById(id) */ },
+  getByCourse: async (courseId) => { /* return await Class.find({ courseId }) */ },
+  getActive: async () => { /* return await Class.find({ isActive: true }).populate('courseId') */ },
+  create: async (data) => { /* return await Class.create(data) */ },
+  activate: async (id) => { /* return await Class.findByIdAndUpdate(id, { isActive: true }, { new: true }) */ },
+  deactivate: async (id) => { /* return await Class.findByIdAndUpdate(id, { isActive: false, participantIds: [] }, { new: true }) */ },
   addTranscription: async (id, segment) => {
     /* return await Class.findByIdAndUpdate(id, { $push: { transcription: segment } }, { new: true }) */
   },
-  saveTranscription:async (id, text) => {
+  saveTranscription: async (id, text) => {
     /* return await Class.findByIdAndUpdate(id, { savedTranscription: text }, { new: true }) */
   },
-  setSummary:       async (id, summary) => {
+  setSummary: async (id, summary) => {
     /* return await Class.findByIdAndUpdate(id, { summary }, { new: true }) */
   },
-  addQuestion:      async (id, question) => {
+  addQuestion: async (id, question) => {
     /* return await Class.findByIdAndUpdate(id, { $push: { questions: question } }, { new: true }) */
   },
-  answerQuestion:   async (classId, questionId) => {
+  answerQuestion: async (classId, questionId) => {
     /* return await Class.findByIdAndUpdate(
          classId,
          { $set: { 'questions.$[q].status': 'answered', 'questions.$[q].answeredAt': new Date() } },
          { arrayFilters: [{ 'q._id': questionId }], new: true }
        ) */
   },
-  joinClass:        async (classId, userId) => {
+  joinClass: async (classId, userId) => {
     /* return await Class.findByIdAndUpdate(classId,
          { $addToSet: { participantIds: userId, attendance: { userId, joinedAt: new Date() } } },
          { new: true }
        ) */
   },
-  leaveClass:       async (classId, userId) => {
+  leaveClass: async (classId, userId) => {
     /* return await Class.findByIdAndUpdate(classId, { $pull: { participantIds: userId } }, { new: true }) */
   },
 }

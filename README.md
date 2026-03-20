@@ -1,16 +1,115 @@
-# React + Vite
+# Gestion Proyecto — Monorepo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Plataforma de gestión educativa con aulas en vivo, transcripción, IA con Gemini y roles de Admin / Profesor / Estudiante.
 
-Currently, two official plugins are available:
+## Estructura del proyecto
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+Gestion_Proyecto/
+├── frontend/          # Vite + React SPA
+├── backend/           # Node.js + Express + Mongoose API
+├── package.json       # Scripts de orquestación raíz
+├── docker-compose.yml # Orquestación Docker (opcional)
+└── .gitignore
+```
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Inicio rápido (sin Docker)
 
-## Expanding the ESLint configuration
+### 1. Clonar e instalar dependencias
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+git clone <url-del-repo>
+cd Gestion_Proyecto
+
+# Instalar dependencias de ambos workspace
+npm run install:all
+
+# O por separado:
+cd frontend && npm install
+cd ../backend && npm install
+```
+
+### 2. Configurar variables de entorno del backend
+
+```bash
+cp backend/.env.example backend/.env
+# Editar backend/.env con tus valores reales:
+#   MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/<db>
+#   GEMINI_API_KEY=...
+#   PORT=3001
+```
+
+> ⚠️ **Nunca** subas el archivo `.env` a Git. Está bloqueado en `.gitignore`.
+
+### 3. Arrancar en modo desarrollo
+
+Ambos servicios a la vez (requiere `concurrently`):
+
+```bash
+npm install        # instala concurrently en raíz
+npm run dev        # arranca frontend en :5173 y backend en :3001
+```
+
+O por separado:
+
+```bash
+npm run dev:frontend   # http://localhost:5173
+npm run dev:backend    # http://localhost:3001
+```
+
+---
+
+## Inicio con Docker Compose
+
+```bash
+# Copia y edita las variables de entorno
+cp backend/.env.example .env
+# (el docker-compose las lee desde la raíz)
+
+docker compose up --build
+```
+
+Servicios disponibles:
+| Servicio  | URL                          |
+|-----------|------------------------------|
+| Frontend  | http://localhost:5173        |
+| Backend   | http://localhost:3001        |
+| MongoDB   | mongodb://localhost:27017    |
+
+---
+
+## API REST (Backend)
+
+Base URL: `http://localhost:3001/api`
+
+| Recurso   | Métodos principales                          |
+|-----------|----------------------------------------------|
+| `/users`  | GET, POST, PUT, DELETE, POST `/login`        |
+| `/courses`| GET, POST, PUT, DELETE, enroll/unenroll      |
+| `/classes`| GET, POST, activate/deactivate, join/leave, transcription, summary, questions |
+| `/health` | GET — health check                           |
+
+---
+
+## Variables de entorno del backend
+
+| Variable       | Descripción                        | Ejemplo               |
+|----------------|------------------------------------|-----------------------|
+| `MONGO_URI`    | URI de conexión MongoDB            | `mongodb+srv://...`   |
+| `GEMINI_API_KEY` | API key de Google Gemini         | `AIza...`             |
+| `PORT`         | Puerto del servidor Express        | `3001`                |
+| `CORS_ORIGIN`  | Origen permitido (frontend URL)    | `http://localhost:5173` |
+| `NODE_ENV`     | Entorno de ejecución               | `development`         |
+
+---
+
+## Tecnologías
+
+| Capa      | Stack                              |
+|-----------|------------------------------------|
+| Frontend  | Vite 5, React 19, CSS vanilla      |
+| Backend   | Node.js 18+, Express 4, Mongoose 8 |
+| Base de datos | MongoDB Atlas (o local con Docker) |
+| IA        | Google Gemini 1.5 Flash            |

@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  # ── Frontend (Vite dev server) ──────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_GEMINI_API_KEY=${VITE_GEMINI_API_KEY}
+    depends_on:
+      - backend
+    command: npm run dev -- --host
+
+  # ── Backend (Express API) ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PORT=3001
+      - NODE_ENV=development
+      - CORS_ORIGIN=http://localhost:5173
+    depends_on:
+      - mongo
+    command: npm run dev
+
+  # ── MongoDB (local dev — optional if using MongoDB Atlas) ───────────────────
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=gestion_proyecto
+
+volumes:
+  mongo_data:

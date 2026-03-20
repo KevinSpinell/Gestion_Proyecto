@@ -1,6 +1,15 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
 // ─────────────────────────────────────────────
+//  RF-02 DOMAIN AREAS (keep in sync with backend Teacher model)
+// ─────────────────────────────────────────────
+export const DOMAIN_AREAS = [
+  'Informática', 'Matemáticas', 'Ciencias', 'Historia',
+  'Idiomas', 'Arte', 'Ingeniería', 'Física',
+  'Química', 'Literatura', 'Educación Física', 'General',
+]
+
+// ─────────────────────────────────────────────
 //  SEED DATA — replace calls with MongoDB later
 // ─────────────────────────────────────────────
 const SEED_USERS = [
@@ -157,21 +166,80 @@ export function AppProvider({ children }) {
   }
 
   // ── USERS ──────────────────────────────────
-  // DB STUB: replace with → POST /api/users (admin)
-  const createTeacher = (data) => {
-    if (users.find(u => u.username === data.username)) return { success: false, error: 'Usuario ya existe' }
-    const newUser = {
-      id: `u${Date.now()}`,
-      name: data.name,
-      email: data.email,
-      username: data.username,
-      password: data.password,
-      role: 'teacher',
-      avatar: data.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-      createdAt: new Date().toISOString().split('T')[0],
+  // POST /api/teachers — persists to MongoDB and syncs local state
+  const createTeacher = async (data) => {
+    // ── [4.1] Required fields (instant FE feedback, no round-trip) ───────────
+    const required = ['documento', 'nombre', 'apellido', 'telefono', 'correo', 'clave', 'areaDominio', 'anioInicio']
+    if (required.some(f => !data[f] || data[f].toString().trim() === ''))
+      return { success: false, error: 'Todos los campos son obligatorios' }
+
+    // ── Field format validations ──────────────────────────────────────────────
+    if (!/^\d{8,11}$/.test(data.documento))
+      return { success: false, error: 'El documento debe tener entre 8 y 11 dígitos numéricos' }
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/.test(data.nombre) || data.nombre.length > 32)
+      return { success: false, error: 'El nombre solo puede contener letras (máx. 32 caracteres)' }
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$/.test(data.apellido) || data.apellido.length > 32)
+      return { success: false, error: 'El apellido solo puede contener letras (máx. 32 caracteres)' }
+    if (!/^\d{10}$/.test(data.telefono))
+      return { success: false, error: 'El teléfono debe tener exactamente 10 dígitos numéricos' }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.correo))
+      return { success: false, error: 'El formato del correo es inválido' }
+    if (data.clave.length < 8)
+      return { success: false, error: 'La clave debe tener al menos 8 caracteres' }
+    if (!/^\d{4}$/.test(data.anioInicio))
+      return { success: false, error: 'El año de inicio debe tener exactamente 4 dígitos numéricos' }
+
+    // ── Call backend API ──────────────────────────────────────────────────────
+    try {
+      const res = await fetch('http://localhost:3001/api/teachers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documento:   data.documento,
+          nombre:      data.nombre.trim(),
+          apellido:    data.apellido.trim(),
+          telefono:    data.telefono,
+          correo:      data.correo.toLowerCase(),
+          clave:       data.clave,
+          areaDominio: data.areaDominio,
+          anioInicio:  data.anioInicio,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok) {
+        // [4.2] Backend uniqueness or validation errors
+        return { success: false, error: json.message || 'Error al crear el profesor' }
+      }
+
+      // ── Sync saved teacher into local state so table refreshes ──────────────
+      const fullName = `${json.nombre} ${json.apellido}`
+      const localUser = {
+        id:          json._id,
+        name:        fullName,
+        email:       json.correo,
+        username:    json.documento,
+        role:        'teacher',
+        avatar:      fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        createdAt:   new Date(json.createdAt).toISOString().split('T')[0],
+        // RF-02 extended fields
+        documento:   json.documento,
+        nombre:      json.nombre,
+        apellido:    json.apellido,
+        telefono:    json.telefono,
+        correo:      json.correo,
+        areaDominio: json.areaDominio,
+        anioInicio:  json.anioInicio,
+        estado:      json.estado,
+      }
+      setUsers(prev => [...prev, localUser])
+      return { success: true, user: localUser }
+
+    } catch (err) {
+      // Network / CORS error
+      return { success: false, error: 'No se pudo conectar al servidor. Verifica que el backend esté corriendo en el puerto 3001.' }
     }
-    setUsers(prev => [...prev, newUser])
-    return { success: true }
   }
 
   // DB STUB: replace with → PUT /api/users/:id

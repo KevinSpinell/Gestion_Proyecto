@@ -1,0 +1,31 @@
+const express = require('express');
+const cors    = require('cors');
+
+const userRoutes    = require('./routes/userRoutes');
+const courseRoutes  = require('./routes/courseRoutes');
+const classRoutes   = require('./routes/classRoutes');
+const teacherRoutes = require('./routes/teacherRoutes');
+
+const app = express();
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use(express.json());
+
+// ── API Routes ────────────────────────────────────────────────────────────────
+app.use('/api/users',    userRoutes);
+app.use('/api/courses',  courseRoutes);
+app.use('/api/classes',  classRoutes);
+app.use('/api/teachers', teacherRoutes);
+
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── 404 handler ───────────────────────────────────────────────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
+module.exports = app;
