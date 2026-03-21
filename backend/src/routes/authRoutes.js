@@ -6,40 +6,37 @@ const { Teacher } = require('../models/Teacher');
 const Student = require('../models/Student');
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
-// Accepts { identifier, password }
-// identifier can be: username (admin), email, or documento (teacher/student)
-// Lookup order: User (admin) → Teacher → Student
+// Acepta { email, password }
+// Busca por email/correo en: User (admin) → Teacher → Student
 router.post('/login', async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!identifier || !password) {
-      return res.status(400).json({ message: 'Identificador y contraseña son requeridos' });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'El correo y la contraseña son requeridos' });
     }
 
-    // ── 1. Try User model (admin / legacy users) ──────────────────────────────
-    const user = await User.findOne({
-      $or: [{ username: identifier }, { email: identifier }],
-    });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // ── 1. Buscar en modelo User (administradores) ────────────────────────────
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (user) {
       const match = await bcrypt.compare(password, user.password);
       if (!match) return res.status(401).json({ message: 'Credenciales incorrectas' });
 
       return res.json({
-        id:        user._id,
-        name:      user.name,
-        email:     user.email,
-        username:  user.username,
-        role:      user.role,
-        avatar:    user.avatar || user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        id:       user._id,
+        name:     user.name,
+        email:    user.email,
+        username: user.username,
+        role:     user.role,
+        avatar:   user.avatar || user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
       });
     }
 
-    // ── 2. Try Teacher model ──────────────────────────────────────────────────
-    const teacher = await Teacher.findOne({
-      $or: [{ documento: identifier }, { correo: identifier.toLowerCase() }],
-    });
+    // ── 2. Buscar en modelo Teacher (profesores) ──────────────────────────────
+    const teacher = await Teacher.findOne({ correo: normalizedEmail });
 
     if (teacher) {
       const match = await bcrypt.compare(password, teacher.clave);
@@ -65,16 +62,14 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // ── 3. Try Student model ──────────────────────────────────────────────────
-    const student = await Student.findOne({
-      $or: [{ documento: identifier }, { correo: identifier.toLowerCase() }],
-    });
+    // ── 3. Buscar en modelo Student (estudiantes) ─────────────────────────────
+    const student = await Student.findOne({ correo: normalizedEmail });
 
     if (student) {
       const match = await bcrypt.compare(password, student.clave);
       if (!match) return res.status(401).json({ message: 'Credenciales incorrectas' });
 
-      // ── [RF-01] aprobado guard ─────────────────────────────────────────────
+      // [RF-01] Guardia de aprobación
       if (!student.aprobado) {
         return res.status(403).json({
           message: 'Su solicitud está siendo revisada por un administrador',
@@ -103,7 +98,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // ── 4. No match found ─────────────────────────────────────────────────────
+    // ── 4. Sin coincidencia ───────────────────────────────────────────────────
     return res.status(401).json({ message: 'Credenciales incorrectas' });
 
   } catch (err) {

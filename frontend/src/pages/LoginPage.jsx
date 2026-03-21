@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 
 export default function LoginPage() {
   const { login, setActivePage } = useApp()
-  const [form, setForm] = useState({ username: '', password: '' })
+  const [form, setForm] = useState({ email: '', password: '' })
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,12 +12,10 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const result = await login(form.username, form.password)
+    const result = await login(form.email, form.password)
     if (!result.success) setError(result.error)
     setLoading(false)
   }
-
-  const fill = (username, password) => setForm({ username, password })
 
   return (
     <div className="auth-page">
@@ -28,24 +26,23 @@ export default function LoginPage() {
 
         <form onSubmit={handle} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="form-group">
-            <label className="form-label">Usuario</label>
+            <label className="form-label">Correo electrónico</label>
             <div className="input-with-icon">
               <span className="input-icon">✉️</span>
               <input
                 className="form-input"
-                placeholder="nombre@classai.edu"
-                value={form.username}
-                onChange={e => setForm({ ...form, username: e.target.value })}
-                autoComplete="username"
+                type="email"
+                placeholder="correo@dominio.com"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                autoComplete="email"
                 required
               />
             </div>
           </div>
 
           <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <label className="form-label">Contraseña</label>
-            </div>
+            <label className="form-label">Contraseña</label>
             <div className="input-with-icon" style={{ position: 'relative' }}>
               <span className="input-icon">🔑</span>
               <input
@@ -74,28 +71,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="auth-divider">cuentas de prueba</div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[
-            { label: '🛡️ Administrador', u: 'admin', p: 'admin123' },
-            { label: '👨‍🏫 Profesor (Carlos)', u: 'prof1', p: 'prof123' },
-            { label: '👨‍🎓 Estudiante (Kevin)', u: 'est1', p: 'est123' },
-          ].map(acc => (
-            <button
-              key={acc.u}
-              type="button"
-              className="btn btn-secondary w-full"
-              style={{ justifyContent: 'space-between', fontSize: 12 }}
-              onClick={() => fill(acc.u, acc.p)}
-            >
-              <span>{acc.label}</span>
-              <span style={{ color: 'var(--text-muted)' }}>{acc.u} / {acc.p}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="auth-footer">
+        <div className="auth-footer" style={{ marginTop: 24 }}>
           ¿Nuevo estudiante?{' '}
           <span className="auth-link" onClick={() => setActivePage('register')}>
             Solicitar acceso
