@@ -84,11 +84,24 @@ exports.remove = async (req, res) => {
 exports.enrollStudent = async (req, res) => {
   try {
     const { studentId } = req.body;
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      { $addToSet: { studentIds: studentId } },
-      { new: true }
-    );
+    if (!studentId) return res.status(400).json({ message: 'studentId es requerido' });
+
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ message: 'Curso no encontrado' });
+
+    // RF-08 Alt. flow 5.2: course not active
+    if (course.status !== 'active') {
+      return res.status(400).json({ message: 'Este curso no está disponible para inscripción' });
+    }
+
+    // RF-08 Alt. flow 5.1: already enrolled
+    const alreadyIn = course.studentIds.map(String).includes(String(studentId));
+    if (alreadyIn) {
+      return res.status(409).json({ message: 'Ya estás inscrito en este curso', alreadyEnrolled: true });
+    }
+
+    course.studentIds.push(studentId);
+    await course.save();
     res.json(course);
   } catch (err) {
     res.status(400).json({ message: err.message });
