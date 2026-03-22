@@ -68,7 +68,7 @@ function ConfirmModal({ course, onConfirm, onCancel, loading }) {
           <button className="btn btn-outline" style={{ flex: 1 }} onClick={onCancel} disabled={loading}>
             Cancelar
           </button>
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={onConfirm} disabled={loading}>
+          <button className="btn btn-primary" style={{ flex: 1, color: 'white' }} onClick={onConfirm} disabled={loading}>
             {loading ? 'Inscribiendo...' : '✓ Inscribirme'}
           </button>
         </div>
@@ -80,8 +80,8 @@ function ConfirmModal({ course, onConfirm, onCancel, loading }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function StudentDashboard() {
   const {
-    currentUser, users, courses, classes,
-    enrollStudent, unenrollStudent,
+    currentUser, users, courses, classes, activePage,
+    enrollStudent, unenrollStudent, requestEnrollment,
     getCoursesForStudent, getActiveClasses, joinClass,
     setActivePage, setActiveClassId,
   } = useApp()
@@ -93,11 +93,17 @@ export default function StudentDashboard() {
   const [enrollLoading, setEnrollLoading] = useState(false)
   const [unenrollLoading, setUnenrollLoading] = useState(null) // courseId being unenrolled
 
+  // Sync internal tab with global activePage
+  useEffect(() => {
+    if (activePage === 'dashboard' || activePage === 'my-courses') setTab('my')
+    else if (activePage === 'explore') setTab('explore')
+    else if (activePage === 'history') setTab('history')
+  }, [activePage])
+
   const showToast = (message, type = 'success') => setToast({ message, type })
 
   const studentId  = currentUser.id || currentUser._id
   const myCourses  = getCoursesForStudent(studentId)
-  const allCourses = courses.filter(c => c.status === 'active')
   const activeClasses = getActiveClasses()
 
   // Active classes I'm enrolled in
@@ -112,19 +118,11 @@ export default function StudentDashboard() {
     setActivePage('classroom')
   }
 
-  // Courses not yet enrolled — active only, filtered by search
-  const explored = allCourses.filter(c =>
+  // Courses not yet enrolled — active AND open only, filtered by search
+  const explored = courses.filter(c =>
     !c.studentIds.map(String).includes(String(studentId)) &&
-    (
-      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.category || '').toLowerCase().includes(search.toLowerCase())
-    )
-  )
-
-  // Also surface inactive/closed courses the student hasn't enrolled in (for 5.2)
-  const closedCourses = courses.filter(c =>
-    c.status !== 'active' &&
-    !c.studentIds.map(String).includes(String(studentId)) &&
+    c.estado === 'Activo' &&
+    (c.tipoInscripcion === 'Abierto' || !c.tipoInscripcion) &&
     (
       (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.category || '').toLowerCase().includes(search.toLowerCase())
@@ -133,9 +131,19 @@ export default function StudentDashboard() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleEnrollClick = (course) => {
-    // Flujo alternativo 5.2: course no está activo
-    if (course.status !== 'active') {
+    // Check if course is active
+    if (course.estado !== 'Activo') {
       showToast('Este curso no está disponible para inscripción', 'info')
+      return
+    }
+    // RF-08: Check if course is closed
+    if (course.tipoInscripcion === 'Cerrado') {
+      showToast('Este curso es privado y no permite autoinscripción', 'error')
+      return
+    }
+    // RF-08: Check if already pending
+    if ((course.pendingStudentIds || []).map(String).includes(String(studentId))) {
+      showToast('Ya tienes una solicitud pendiente para este curso', 'info')
       return
     }
     // Flujo alternativo 5.1: ya inscrito
@@ -151,15 +159,14 @@ export default function StudentDashboard() {
     if (!confirmCourse) return
     setEnrollLoading(true)
     const courseId = confirmCourse.id || confirmCourse._id
-    const result = await enrollStudent(courseId, studentId)
+    const result = await requestEnrollment(courseId, studentId)
     setEnrollLoading(false)
     setConfirmCourse(null)
 
     if (result?.alreadyEnrolled) {
       showToast('Ya estás inscrito en este curso', 'info')
     } else if (result?.success) {
-      showToast('¡Inscripción exitosa! Ahora tienes acceso al curso 🎉', 'success')
-      setTab('my')
+      showToast('¡Solicitud enviada! Espera a que el administrador la apruebe ⏳', 'success')
     } else {
       showToast(result?.error || 'Error al inscribirse', 'error')
     }
@@ -251,13 +258,13 @@ export default function StudentDashboard() {
 
         {/* Tabs */}
         <div className="tabs">
-          <button className={`tab-btn ${tab === 'my' ? 'active' : ''}`} onClick={() => setTab('my')}>
+          <button className={`tab-btn ${tab === 'my' ? 'active' : ''}`} onClick={() => setActivePage('my-courses')}>
             Mis Cursos <span className="tab-count">{myCourses.length}</span>
           </button>
-          <button className={`tab-btn ${tab === 'explore' ? 'active' : ''}`} onClick={() => setTab('explore')}>
+          <button className={`tab-btn ${tab === 'explore' ? 'active' : ''}`} onClick={() => setActivePage('explore')}>
             Explorar Cursos <span className="tab-count">{explored.length}</span>
           </button>
-          <button className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
+          <button className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setActivePage('history')}>
             Mi Historial
           </button>
         </div>
@@ -328,7 +335,7 @@ export default function StudentDashboard() {
             </div>
 
             {/* Flujo alternativo 2.1: no hay cursos activos disponibles */}
-            {explored.length === 0 && closedCourses.length === 0 ? (
+            {explored.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-state-icon">🔍</span>
                 <div className="empty-state-title">No hay cursos disponibles en este momento</div>
@@ -342,6 +349,7 @@ export default function StudentDashboard() {
                     {explored.map(c => {
                       const cId    = c.id || c._id
                       const teacher = users.find(u => (u.id || u._id) === c.teacherId)
+                      const isPending = (c.pendingStudentIds || []).map(String).includes(String(studentId))
                       return (
                         <div key={cId} className="course-card">
                           <div className="course-card-thumb" style={{ background: 'var(--primary-bg)' }}>
@@ -354,6 +362,7 @@ export default function StudentDashboard() {
                             <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
                               <span className="badge badge-success">✅ Disponible</span>
                               <span className="badge badge-gray">👥 {c.studentIds?.length || 0} inscritos</span>
+                              {isPending && <span className="badge badge-info">⏳ Pendiente</span>}
                             </div>
                             <div className="course-card-footer">
                               <div className="course-card-teacher">
@@ -362,9 +371,11 @@ export default function StudentDashboard() {
                               </div>
                               <button
                                 className="btn btn-sm btn-primary"
+                                style={{ color: 'white' }}
                                 onClick={() => handleEnrollClick(c)}
+                                disabled={isPending}
                               >
-                                + Inscribirme
+                                {isPending ? 'Solicitado' : '+ Inscribirme'}
                               </button>
                             </div>
                           </div>
@@ -375,44 +386,7 @@ export default function StudentDashboard() {
                 )}
 
                 {/* Flujo alternativo 5.2: cursos cerrados/inactivos */}
-                {closedCourses.length > 0 && (
-                  <>
-                    <div style={{ margin: '24px 0 12px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>
-                      Cursos cerrados
-                    </div>
-                    <div className="course-grid">
-                      {closedCourses.map(c => {
-                        const cId    = c.id || c._id
-                        const teacher = users.find(u => (u.id || u._id) === c.teacherId)
-                        return (
-                          <div key={cId} className="course-card" style={{ opacity: 0.7 }}>
-                            <div className="course-card-thumb" style={{ background: '#F3F4F6' }}>
-                              {THUMB[c.category] || '📖'}
-                            </div>
-                            <div className="course-card-body">
-                              <div className="course-card-cat">{c.category}</div>
-                              <div className="course-card-name">{c.name}</div>
-                              <div className="course-card-desc">{c.description}</div>
-                              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-                                <span className="badge badge-gray">🔒 Cerrado</span>
-                              </div>
-                              <div className="course-card-footer">
-                                <div className="course-card-teacher">
-                                  {teacher && <Avatar user={teacher} size="sm" />}
-                                  <span>{teacher?.name || 'Sin profesor'}</span>
-                                </div>
-                                {/* Flujo alternativo 5.2: botón deshabilitado */}
-                                <button className="btn btn-sm" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
-                                  No disponible
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </>
-                )}
+
               </>
             )}
           </>

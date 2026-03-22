@@ -1,5 +1,6 @@
 const express = require('express');
-const cors    = require('cors');
+const cors = require('cors');
+const path = require('path');
 
 const userRoutes     = require('./routes/userRoutes');
 const courseRoutes   = require('./routes/courseRoutes');
@@ -14,7 +15,10 @@ const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 
-// ── API Routes ────────────────────────────────────────────────────────────────
+// Serve static uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// ── Rutas ────────────────────────────────────────────────────────────────
 app.use('/api/auth',     authRoutes);
 app.use('/api/users',    userRoutes);
 app.use('/api/courses',  courseRoutes);

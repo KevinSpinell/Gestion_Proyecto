@@ -114,25 +114,76 @@ export function AppProvider({ children }) {
   useEffect(() => { localStorage.setItem('classai_users', JSON.stringify(users)) }, [users])
   useEffect(() => { localStorage.setItem('classai_classes', JSON.stringify(classes)) }, [classes])
 
-  // ── Fetch real courses from MongoDB on mount ────────────────────────────────
-  useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        const res = await fetch('http://localhost:3001/api/courses')
-        if (!res.ok) throw new Error('API error')
-        const data = await res.json()
-        // Normalize: ensure each course has an `id` field (= _id) for FE compat
-        setCourses(data.map(c => ({ ...c, id: c._id })))
-        // Clear any stale seed data from localStorage
+  // ── Fetch real data from MongoDB on mount ──────────────────────────────────
+  const refreshData = useCallback(async () => {
+    try {
+      // 1. Fetch Courses
+      const resCourses = await fetch('http://localhost:3001/api/courses')
+      if (resCourses.ok) {
+        const dataCourses = await resCourses.json()
+        setCourses(dataCourses.map(c => ({ 
+          ...c, 
+          id: c._id, 
+          teacherId: c.teacherId?._id || c.teacherId, // Normalize if populated
+          studentIds: (c.studentIds || []).map(id => id._id || id),
+          pendingStudentIds: (c.pendingStudentIds || []).map(id => id._id || id)
+        })))
         localStorage.removeItem('classai_courses')
-      } catch {
-        // Backend offline — fall back to seed data so UI doesn't break
-        const cached = localStorage.getItem('classai_courses')
-        setCourses(cached ? JSON.parse(cached) : SEED_COURSES)
       }
+
+      // 2. Fetch Teachers, Students and Admins
+      const [resT, resS, resU] = await Promise.all([
+        fetch('http://localhost:3001/api/teachers'),
+        fetch('http://localhost:3001/api/students'),
+        fetch('http://localhost:3001/api/users')
+      ])
+
+      let allUsers = [...SEED_USERS];
+
+      if (resT.ok) {
+        const teachers = await resT.json()
+        const mappedT = teachers.map(t => ({
+          ...t,
+          id: t._id,
+          name: `${t.nombre} ${t.apellido}`,
+          email: t.correo,
+          role: 'teacher',
+          avatar: `${t.nombre[0]}${t.apellido[0]}`.toUpperCase()
+        }))
+        allUsers = allUsers.filter(u => u.role !== 'teacher')
+        allUsers = [...allUsers, ...mappedT]
+      }
+
+      if (resS.ok) {
+        const students = await resS.json()
+        const mappedS = students.map(s => ({
+          ...s,
+          id: s._id,
+          name: `${s.nombre} ${s.apellido}`,
+          email: s.correo,
+          role: 'student',
+          avatar: `${s.nombre[0]}${s.apellido[0]}`.toUpperCase()
+        }))
+        allUsers = allUsers.filter(u => u.role !== 'student')
+        allUsers = [...allUsers, ...mappedS]
+      }
+
+      if (resU.ok) {
+        const admins = await resU.json()
+        const mappedA = admins.map(a => ({ ...a, id: a._id }))
+        allUsers = [...allUsers.filter(u => u.role === 'admin' && u.id === 'u1'), ...mappedA]
+      }
+
+      setUsers(allUsers)
+
+    } catch (err) {
+      console.error('Error fetching data:', err)
     }
-    fetchCourses()
   }, [])
+
+  useEffect(() => {
+    refreshData()
+  }, [refreshData])
 
   // Cross-tab real-time sync (classes)
   useEffect(() => {
@@ -293,31 +344,80 @@ export function AppProvider({ children }) {
   }
 
   // ── COURSES ────────────────────────────────
-  // DB STUB: replace with → POST /api/courses
-  const createCourse = (data) => {
-    const newCourse = {
-      id: `c${Date.now()}`,
-      name: data.name,
-      description: data.description,
-      category: data.category || 'General',
-      teacherId: data.teacherId || null,
-      studentIds: [],
-      status: 'active',
-      createdAt: new Date().toISOString().split('T')[0],
+  const createCourse = async (data) => {
+    try {
+      const res = await fetch('http://localhost:3001/api/courses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          category: data.category || 'General',
+          teacherId: data.teacherId || null,
+          estado: data.estado || 'Activo',
+          tipoInscripcion: data.tipoInscripcion || 'Abierto',
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message };
+      
+      const newCourse = { 
+        ...json, 
+        id: json._id,
+        teacherId: json.teacherId?._id || json.teacherId 
+      };
+      setCourses(prev => [...prev, newCourse]);
+      return { success: true, course: newCourse };
+    } catch (err) {
+      return { success: false, error: 'Network error al crear curso' };
     }
-    setCourses(prev => [...prev, newCourse])
-    return { success: true, course: newCourse }
   }
 
-  // DB STUB: replace with → PUT /api/courses/:id
-  const updateCourse = (id, data) => {
-    setCourses(prev => prev.map(c => c.id === id ? { ...c, ...data } : c))
+  const updateCourse = async (id, data) => {
+    try {
+      const dbId = id.toString();
+      const res = await fetch(`http://localhost:3001/api/courses/${dbId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message };
+      
+      setCourses(prev => prev.map(c => {
+        if ((c.id || c._id) === dbId) {
+          return { 
+            ...c, 
+            ...json, 
+            id: json._id,
+            teacherId: json.teacherId?._id || json.teacherId
+          };
+        }
+        return c;
+      }));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Network error al actualizar curso' };
+    }
   }
 
-  // DB STUB: replace with → DELETE /api/courses/:id
-  const deleteCourse = (id) => {
-    setCourses(prev => prev.filter(c => c.id !== id))
-    setClasses(prev => prev.filter(cl => cl.courseId !== id))
+  const deleteCourse = async (id) => {
+    try {
+      const dbId = id.toString();
+      const res = await fetch(`http://localhost:3001/api/courses/${dbId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const json = await res.json();
+        return { success: false, error: json.message || 'Error al eliminar' };
+      }
+      
+      setCourses(prev => prev.filter(c => (c.id || c._id) !== dbId));
+      setClasses(prev => prev.filter(cl => cl.courseId !== dbId));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Network error al eliminar curso' };
+    }
   }
 
   // RF-08: POST /api/courses/:id/enroll — persists to MongoDB
@@ -370,6 +470,61 @@ export function AppProvider({ children }) {
       return { success: true }
     } catch {
       return { success: false, error: 'No se pudo conectar al servidor' }
+    }
+  }
+
+  // RF-08: POST /api/courses/:id/request-enroll
+  const requestEnrollment = async (courseId, studentId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/courses/${courseId}/request-enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      })
+      const json = await res.json()
+      if (!res.ok) return { success: false, error: json.message || 'Error al solicitar' }
+
+      await refreshData()
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Error de red' }
+    }
+  }
+
+  // Admin approval
+  const approveEnrollment = async (courseId, studentId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/courses/${courseId}/approve-enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        return { success: false, error: json.message || 'Error al aprobar' }
+      }
+      await refreshData()
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Error de red' }
+    }
+  }
+
+  const rejectEnrollment = async (courseId, studentId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/courses/${courseId}/reject-enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        return { success: false, error: json.message || 'Error al rechazar' }
+      }
+      await refreshData()
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Error de red' }
     }
   }
 
@@ -511,6 +666,48 @@ export function AppProvider({ children }) {
     ))
   }
 
+  // RF-07: Course Contents
+  const addCourseContent = async (courseId, formData) => {
+    try {
+      const dbId = courseId.toString();
+      const res = await fetch(`http://localhost:3001/api/courses/${dbId}/contents`, {
+        method: 'POST',
+        body: formData
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || 'Error agregando contenido' };
+
+      setCourses(prev => prev.map(c => 
+        (c.id || c._id) === dbId ? { ...c, contents: [...(c.contents || []), json] } : c
+      ));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Error de red al agregar contenido' };
+    }
+  }
+
+  const deleteCourseContent = async (courseId, contentId) => {
+    try {
+      const dbId = courseId.toString();
+      const res = await fetch(`http://localhost:3001/api/courses/${dbId}/contents/${contentId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const json = await res.json();
+        return { success: false, error: json.message || 'Error al eliminar contenido' };
+      }
+
+      setCourses(prev => prev.map(c => 
+        (c.id || c._id) === dbId 
+          ? { ...c, contents: (c.contents || []).filter(cnt => cnt._id !== contentId) }
+          : c
+      ));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Error de red al eliminar contenido' };
+    }
+  }
+
   // ── HELPERS ────────────────────────────────
   const getUserById      = (id) => users.find(u => String(u.id || u._id) === String(id))
   const getCourseById    = (id) => courses.find(c => String(c.id || c._id) === String(id))
@@ -524,13 +721,14 @@ export function AppProvider({ children }) {
     // State
     users, courses, classes, currentUser, activePage, activeClassId,
     // Navigation
-    setActivePage, setActiveClassId,
+    setActivePage, setActiveClassId, refreshData,
     // Auth
     login, logout, registerStudent,
     // Users
     createTeacher, updateUser, deleteUser,
     // Courses
     createCourse, updateCourse, deleteCourse, enrollStudent, unenrollStudent,
+    addCourseContent, deleteCourseContent, requestEnrollment, approveEnrollment, rejectEnrollment,
     // Classes
     createClass, activateClass, deactivateClass, joinClass, leaveClass,
     appendTranscription, clearTranscription, saveTranscription, setSummary,

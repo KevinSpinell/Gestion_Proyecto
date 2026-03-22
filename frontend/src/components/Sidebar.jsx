@@ -15,26 +15,30 @@ export function Avatar({ user, size = 'md', style = {} }) {
 }
 
 export default function Sidebar() {
-  const { currentUser, logout, activePage, setActivePage, getActiveClasses } = useApp()
-  const [pendingCount, setPendingCount] = useState(0)
+  const { currentUser, logout, activePage, setActivePage, getActiveClasses, courses } = useApp()
+  const [regPendingCount, setRegPendingCount] = useState(0)
 
-  // Fetch pending enrollment count for the admin badge
+  // Fetch pending account registration count for the admin badge
   useEffect(() => {
     if (currentUser?.role !== 'admin') return
     fetch('http://localhost:3001/api/students/pending')
       .then(r => r.ok ? r.json() : [])
-      .then(data => setPendingCount(Array.isArray(data) ? data.length : 0))
+      .then(data => setRegPendingCount(Array.isArray(data) ? data.length : 0))
       .catch(() => {})
   }, [currentUser?.role, activePage])
 
   const activeClasses = getActiveClasses()
+
+  // Calculate total pending: Registration requests + Course enrollment requests
+  const courseRequestsCount = courses.reduce((acc, c) => acc + (c.pendingStudentIds?.length || 0), 0)
+  const totalPending = regPendingCount + courseRequestsCount
 
   const navMap = {
     admin: [
       { id: 'dashboard',  icon: '🏠', label: 'Inicio' },
       { id: 'users',      icon: '👥', label: 'Usuarios' },
       { id: 'courses',    icon: '📚', label: 'Cursos' },
-      { id: 'enrollment', icon: '📋', label: 'Solicitudes de Inscripción', badge: pendingCount },
+      { id: 'enrollment', icon: '📋', label: 'Solicitudes de Inscripción', badge: totalPending },
       { id: 'reports',    icon: '📊', label: 'Reportes' },
     ],
     teacher: [

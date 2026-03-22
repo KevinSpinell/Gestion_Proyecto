@@ -2,6 +2,17 @@ import { useState } from 'react'
 import { useApp } from '../../context/AppContext'
 import { Avatar } from '../../components/Sidebar'
 
+const THUMB = { 
+  Informática: '💻', 
+  Matemáticas: '📐', 
+  Ciencias: '🔬', 
+  Historia: '📚', 
+  Idiomas: '🌍', 
+  Arte: '🎨', 
+  Ingeniería: '⚙️', 
+  General: '📖' 
+}
+
 function CreateClassModal({ courseId, onClose }) {
   const { createClass, activateClass, setActivePage, setActiveClassId } = useApp()
   const [form, setForm] = useState({ title: '', date: new Date().toISOString().split('T')[0], startTime: '', sessionType: 'Live' })
@@ -10,7 +21,7 @@ function CreateClassModal({ courseId, onClose }) {
   const handleCreate = () => {
     if (!form.title) { setError('El título es requerido'); return }
     const result = createClass({ ...form, courseId })
-    if (result.success) {
+    if (result && result.success) {
       activateClass(result.class.id)
       setActiveClassId(result.class.id)
       setActivePage('classroom')
@@ -72,13 +83,158 @@ function CreateClassModal({ courseId, onClose }) {
   )
 }
 
-export default function TeacherDashboard() {
-  const { currentUser, classes, courses, users, getCoursesForTeacher, getClassesForCourse, activateClass, setActivePage, setActiveClassId } = useApp()
-  const [showCreateModal, setShowCreateModal] = useState(null) // courseId
-  const [tab, setTab] = useState('active')
+function ManageContentsModal({ courseId, onClose }) {
+  const { courses, addCourseContent, deleteCourseContent } = useApp()
+  const [form, setForm] = useState({ title: '', type: 'Archivo', description: '' })
+  const [file, setFile] = useState(null)
+  const [error, setError] = useState('')
+  const [isUploading, setIsUploading] = useState(false)
 
-  const myCourses = getCoursesForTeacher(currentUser.id)
-  const myClasses = myCourses.flatMap(c => getClassesForCourse(c.id))
+  const course = (courses || []).find(c => (c.id === courseId || c._id === courseId))
+  const contents = (course && course.contents) || []
+
+  const handleAdd = async () => {
+    if (!form.title) { setError('El título es requerido'); return }
+    if (form.type === 'Archivo' && !file) { setError('Debes seleccionar un archivo'); return }
+
+    setError('');
+    setIsUploading(true);
+
+    const formData = new FormData();
+    formData.append('title', form.title);
+    formData.append('type', form.type);
+    formData.append('description', form.description);
+    if (form.type === 'Archivo' && file) {
+      formData.append('file', file);
+    }
+
+    const res = await addCourseContent(courseId, formData);
+    setIsUploading(false);
+
+    if (res && res.success) {
+      setForm({ title: '', type: 'Archivo', description: '' });
+      setFile(null);
+      onClose();
+    } else {
+      setError((res && res.error) || 'Error al agregar contenido');
+    }
+  }
+
+  const handleDelete = async (contentId) => {
+    if (!window.confirm('¿Seguro que deseas eliminar este material?')) return;
+    const res = await deleteCourseContent(courseId, contentId);
+    if (res && !res.success) alert(res.error || 'No se pudo eliminar');
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()} style={{ maxWidth: 800 }}>
+        <div className="modal-header purple">
+          <div className="modal-title" style={{ color: 'white' }}>📂 Materiales: {course?.name}</div>
+          <button className="btn btn-ghost btn-sm" style={{ color: 'white' }} onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxHeight: '70vh', overflowY: 'auto' }}>
+          
+          <div>
+            <h4 style={{ marginBottom: 12 }}>Contenidos Publicados ({contents.length})</h4>
+            {contents.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Aún no hay materiales subidos a este curso.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {contents.map(cnt => (
+                  <div key={cnt._id} style={{ padding: 12, background: 'var(--bg-page)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{cnt.title}</div>
+                      <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(cnt._id)}>🗑️</button>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                      <span className={`badge ${cnt.type === 'Archivo' ? 'badge-primary' : cnt.type === 'Actividad' ? 'badge-success' : 'badge-warning'}`}>
+                        {cnt.type}
+                      </span>
+                      <span style={{ marginLeft: 6 }}>{cnt.createdAt ? new Date(cnt.createdAt).toLocaleDateString() : ''}</span>
+                    </div>
+                    {cnt.description && <div style={{ fontSize: 12, marginTop: 6 }}>{cnt.description}</div>}
+                    {cnt.fileUrl && (
+                      <div style={{ marginTop: 10 }}>
+                        <a 
+                          href={`http://localhost:3001${cnt.fileUrl}`} 
+                          download={cnt.originalName || cnt.title}
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="btn btn-sm btn-primary" 
+                          style={{ fontSize: 11, width: '100%', justifyContent: 'center' }}
+                        >
+                          ⬇️ Descargar: {cnt.originalName || 'Archivo'}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {course?.estado === 'Activo' ? (
+            <div style={{ background: 'var(--primary-bg)', padding: 16, borderRadius: 'var(--radius-md)', border: '1px solid var(--primary-border)' }}>
+              <h4 style={{ marginBottom: 12 }}>Agregar Nuevo Contenido</h4>
+              <div className="form-group">
+                <label className="form-label">TÍTULO *</label>
+                <input className="form-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Ej: Lectura Semana 1" maxLength="100"/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">TIPO *</label>
+                <select className="form-select" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                  <option value="Archivo">Archivo</option>
+                  <option value="Actividad">Actividad</option>
+                  <option value="Anuncio">Anuncio</option>
+                </select>
+              </div>
+              {form.type === 'Archivo' && (
+                <div className="form-group">
+                  <label className="form-label">ARCHIVO (PDF, DOCX, PPTX - Máx 50MB) *</label>
+                  <input type="file" className="form-input" onChange={e => setFile(e.target.files[0])} accept=".pdf,.docx,.pptx" />
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">DESCRIPCIÓN</label>
+                <textarea className="form-textarea" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Instrucciones o notas adicionales..." maxLength="500"></textarea>
+              </div>
+              {error && <div className="form-error" style={{ marginBottom: 10 }}>⚠️ {error}</div>}
+              <button className="btn btn-primary w-full" onClick={handleAdd} disabled={isUploading}>
+                {isUploading ? 'Subiendo...' : '➕ Publicar Contenido'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ background: '#F9FAFB', padding: 20, borderRadius: 'var(--radius-md)', border: '1px dashed var(--border)', textAlign: 'center' }}>
+               <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
+               <div style={{ fontWeight: 600 }}>Gestión Deshabilitada</div>
+               <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Este curso no está <b>Activo</b>. Solo puedes visualizar o eliminar contenidos existentes.</p>
+            </div>
+          )}
+
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function TeacherDashboard() {
+  const { currentUser, activePage, classes, courses, users, getCoursesForTeacher, getClassesForCourse, activateClass, updateCourse, setActivePage, setActiveClassId, refreshData } = useApp()
+  const [showCreateModal, setShowCreateModal] = useState(null)
+  const [showContentsModal, setShowContentsModal] = useState(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await refreshData()
+    setIsRefreshing(false)
+  }
+
+  const myCourses = getCoursesForTeacher(currentUser?.id) || []
+  const myClasses = myCourses.flatMap(c => getClassesForCourse(c.id) || [])
   const activeClasses = myClasses.filter(cl => cl.isActive)
   const pastClasses   = myClasses.filter(cl => !cl.isActive && cl.savedTranscription)
 
@@ -87,71 +243,62 @@ export default function TeacherDashboard() {
     setActivePage('classroom')
   }
 
-  const THUMB = { Informática: '💻', Matemáticas: '📐', Ciencias: '🔬', Historia: '📚', Idiomas: '🌍', Arte: '🎨', Ingeniería: '⚙️', General: '📖' }
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <div className="topbar-title">🏠 Panel del Profesor</div>
-          <div className="topbar-subtitle">Hola, {currentUser.name.split(' ')[0]} 👋 — {new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-        </div>
-        <div className="topbar-right">
-          <span className="badge badge-primary">Profesor</span>
-        </div>
-      </div>
-
-      <div className="page-content fade-in">
-        {/* Stats */}
-        <div className="stats-grid">
-          {[
-            { label: 'Mis Cursos',   value: myCourses.length,    icon: '📚', bg: '#EDE9FE', color: '#7C3AED' },
-            { label: 'Clases Dadas', value: myClasses.length,    icon: '🎓', bg: '#EFF6FF', color: '#2563EB' },
-            { label: 'En Vivo',      value: activeClasses.length, icon: '🔴', bg: '#FEF2F2', color: '#DC2626' },
-            { label: 'Guardadas',    value: pastClasses.length,  icon: '💾', bg: '#ECFDF5', color: '#059669' },
-          ].map(s => (
-            <div className="stat-card" key={s.label}>
-              <div className="stat-card-top">
-                <div className="stat-card-label">{s.label}</div>
-                <div className="stat-card-icon" style={{ background: s.bg }}>{s.icon}</div>
+  const renderContent = () => {
+    if (!activePage || activePage === 'dashboard') {
+      return (
+        <>
+          <div className="stats-grid">
+            {[
+              { label: 'Mis Cursos',   value: myCourses.length,    icon: '📚', bg: '#EDE9FE', color: '#7C3AED' },
+              { label: 'Clases Dadas', value: myClasses.length,    icon: '🎓', bg: '#EFF6FF', color: '#2563EB' },
+              { label: 'En Vivo',      value: activeClasses.length, icon: '🔴', bg: '#FEF2F2', color: '#DC2626' },
+              { label: 'Guardadas',    value: pastClasses.length,  icon: '💾', bg: '#ECFDF5', color: '#059669' },
+            ].map(s => (
+              <div className="stat-card" key={s.label}>
+                <div className="stat-card-top">
+                  <div className="stat-card-label">{s.label}</div>
+                  <div className="stat-card-icon" style={{ background: s.bg }}>{s.icon}</div>
+                </div>
+                <div className="stat-card-value">{s.value}</div>
               </div>
-              <div className="stat-card-value">{s.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Active Classes */}
-        {activeClasses.length > 0 && (
-          <div className="card" style={{ marginBottom: 20, borderColor: 'var(--primary-border)', borderWidth: 2 }}>
-            <div className="card-header">
-              <div>
-                <div className="card-title" style={{ color: 'var(--primary)' }}>🔴 Clases activas ahora</div>
-                <div className="card-subtitle">Hay {activeClasses.length} clase(s) en vivo</div>
-              </div>
-            </div>
-            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {activeClasses.map(cl => {
-                const course = myCourses.find(c => c.id === cl.courseId)
-                return (
-                  <div key={cl.id} className="lobby-card">
-                    <div className="lobby-icon" style={{ background: '#FEF2F2' }}>🔴</div>
-                    <div className="lobby-info">
-                      <div className="lobby-title">{cl.title}</div>
-                      <div className="lobby-sub">{course?.name}</div>
-                      <div className="lobby-meta">
-                        <span>👥 {cl.participantIds.length} conectados</span>
-                        <span>❓ {cl.questions.filter(q => q.status === 'pending').length} preguntas pendientes</span>
-                      </div>
-                    </div>
-                    <button className="btn btn-primary" onClick={() => enterClass(cl.id)}>→ Entrar</button>
-                  </div>
-                )
-              })}
-            </div>
+            ))}
           </div>
-        )}
 
-        {/* My Courses */}
+          {activeClasses.length > 0 && (
+            <div className="card" style={{ marginTop: 20, borderColor: 'var(--primary-border)', borderWidth: 2 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title" style={{ color: 'var(--primary)' }}>🔴 Clases activas ahora</div>
+                  <div className="card-subtitle">Hay {activeClasses.length} clase(s) en vivo</div>
+                </div>
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {activeClasses.map(cl => {
+                  const course = myCourses.find(c => c.id === cl.courseId)
+                  return (
+                    <div key={cl.id} className="lobby-card">
+                      <div className="lobby-icon" style={{ background: '#FEF2F2' }}>🔴</div>
+                      <div className="lobby-info">
+                        <div className="lobby-title">{cl.title}</div>
+                        <div className="lobby-sub">{course?.name}</div>
+                        <div className="lobby-meta">
+                          <span>👥 {(cl.participantIds || []).length} conectados</span>
+                          <span>❓ {(cl.questions || []).filter(q => q.status === 'pending').length} preguntas pendientes</span>
+                        </div>
+                      </div>
+                      <button className="btn btn-primary" onClick={() => enterClass(cl.id)}>→ Entrar</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )
+    }
+
+    if (activePage === 'my-courses') {
+      return (
         <div className="card">
           <div className="card-header">
             <div className="card-title">Mis Cursos Asignados</div>
@@ -167,25 +314,77 @@ export default function TeacherDashboard() {
             ) : (
               <div className="course-grid">
                 {myCourses.map(c => {
-                  const courseClasses = getClassesForCourse(c.id)
+                  const courseClasses = getClassesForCourse(c.id) || []
                   const hasActive     = courseClasses.some(cl => cl.isActive)
                   return (
-                    <div key={c.id} className="course-card">
-                      <div className="course-card-thumb" style={{ background: hasActive ? '#FEF2F2' : 'var(--primary-bg)' }}>
-                        {THUMB[c.category] || '📖'}
+                    <div key={c.id || c._id} className="course-card slide-up" style={{ position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 5 }}>
+                        <span className={`badge ${
+                          c.estado === 'Activo' ? 'badge-success' : 
+                          c.estado === 'Pausado' ? 'badge-warning' : 
+                          c.estado === 'Desactivado' ? 'badge-danger' : 'badge-gray'
+                        }`} style={{ boxShadow: 'var(--shadow-sm)' }}>
+                          {c.estado || 'Activo'}
+                        </span>
                       </div>
-                      <div className="course-card-body">
-                        <div className="course-card-cat">{c.category}</div>
-                        <div className="course-card-name">{c.name}</div>
-                        <div className="course-card-desc">{c.description}</div>
-                        <div style={{ display: 'flex', gap: 6, marginBottom: 12, fontSize: 11 }}>
-                          <span className="badge badge-info">👥 {c.studentIds.length} estudiantes</span>
-                          <span className="badge badge-gray">🎓 {courseClasses.length} clases</span>
-                          {hasActive && <span className="badge badge-live">🔴 En Vivo</span>}
+
+                      <div className="course-card-thumb" style={{ height: 100, background: 'var(--primary-bg)', fontSize: 40 }}>
+                        {c.category === 'Matemáticas' ? '🧮' : c.category === 'Ciencias' ? '🔬' : c.category === 'Programación' ? '💻' : '📚'}
+                      </div>
+
+                      <div className="course-card-body" style={{ padding: '16px 20px' }}>
+                        <div className="course-card-cat" style={{ fontSize: 10 }}>{c.category}</div>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, margin: '4px 0 8px' }}>{c.name}</h3>
+                        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, height: '2.5rem', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {c.description}
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16, background: '#F8FAFC', padding: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Estudiantes</span>
+                            <span style={{ fontWeight: 700, fontSize: 14 }}>👥 {(c.studentIds || []).length}</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Materiales</span>
+                            <span style={{ fontWeight: 700, fontSize: 14 }}>📂 {c.contents?.length || 0}</span>
+                          </div>
                         </div>
-                        <button className="btn btn-primary w-full" onClick={() => setShowCreateModal(c.id)}>
-                          ➕ Nueva Clase
-                        </button>
+
+                        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-secondary" style={{ flex: 1, height: 40 }} onClick={() => setShowContentsModal(c.id || c._id)}>
+                              📑 Gestionar
+                            </button>
+                            <button 
+                              className="btn btn-primary" 
+                              style={{ flex: 1, height: 40 }} 
+                              onClick={() => {
+                                if (hasActive) {
+                                  const cl = activeClasses.find(cl => cl.courseId === (c.id || c._id))
+                                  enterClass(cl.id)
+                                } else {
+                                  setShowCreateModal(c.id || c._id)
+                                }
+                              }}
+                              disabled={c.estado !== 'Activo' && !hasActive}
+                            >
+                              {hasActive ? '🔴 Unirse' : (c.estado === 'Activo' ? '➕ Nueva Sala' : '🚫 Bloqueado')}
+                            </button>
+                          </div>
+                          {c.estado === 'Pausado' && (
+                            <button 
+                              className="btn btn-outline" 
+                              style={{ width: '100%', fontSize: 11, padding: '4px 8px' }} 
+                              onClick={() => {
+                                updateCourse(c.id || c._id, { solicitarDespausa: true });
+                                alert('✅ Solicitud de despausa enviada al administrador.');
+                              }}
+                              disabled={c.solicitarDespausa}
+                            >
+                              {c.solicitarDespausa ? '⏳ Solicitud en trámite' : '▶️ Solicitar Despausa'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
@@ -194,50 +393,79 @@ export default function TeacherDashboard() {
             )}
           </div>
         </div>
+      )
+    }
 
-        {/* Class History */}
-        {myClasses.length > 0 && (
-          <div className="card" style={{ marginTop: 20 }}>
-            <div className="card-header">
-              <div className="card-title">📋 Historial de Clases</div>
-            </div>
-            <div className="card-body" style={{ padding: 0 }}>
-              <table className="data-table">
-                <thead>
-                  <tr><th>Clase</th><th>Curso</th><th>Fecha</th><th>Asistentes</th><th>Estado</th><th>Acciones</th></tr>
-                </thead>
-                <tbody>
-                  {myClasses.slice().reverse().map(cl => {
-                    const course = myCourses.find(c => c.id === cl.courseId)
-                    return (
-                      <tr key={cl.id}>
-                        <td><div style={{ fontWeight: 600 }}>{cl.title}</div></td>
-                        <td style={{ fontSize: 12 }}>{course?.name}</td>
-                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{cl.date} {cl.startTime}</td>
-                        <td><span className="badge badge-primary">{cl.attendance.length} 👥</span></td>
-                        <td>
-                          <span className={`badge ${cl.isActive ? 'badge-live' : cl.savedTranscription ? 'badge-success' : 'badge-gray'}`}>
-                            {cl.isActive ? '🔴 En Vivo' : cl.savedTranscription ? '✅ Guardada' : 'Sin transcript'}
-                          </span>
-                        </td>
-                        <td>
-                          {cl.isActive
-                            ? <button className="btn btn-sm btn-primary" onClick={() => enterClass(cl.id)}>→ Retomar</button>
-                            : <button className="btn btn-sm btn-secondary" disabled>Finalizada</button>
-                          }
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+    if (activePage === 'history') {
+      return (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">📋 Historial de Clases</div>
           </div>
-        )}
+          <div className="card-body" style={{ padding: 0 }}>
+            <table className="data-table">
+              <thead>
+                <tr><th>Clase</th><th>Curso</th><th>Fecha</th><th>Asistentes</th><th>Estado</th><th>Acciones</th></tr>
+              </thead>
+              <tbody>
+                {(myClasses || []).slice().reverse().map(cl => {
+                  const course = myCourses.find(c => c.id === cl.courseId)
+                  return (
+                    <tr key={cl.id}>
+                      <td><div style={{ fontWeight: 600 }}>{cl.title}</div></td>
+                      <td style={{ fontSize: 12 }}>{course?.name}</td>
+                      <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{cl.date} {cl.startTime}</td>
+                      <td><span className="badge badge-primary">{(cl.attendance || []).length} 👥</span></td>
+                      <td>
+                        <span className={`badge ${cl.isActive ? 'badge-live' : cl.savedTranscription ? 'badge-success' : 'badge-gray'}`}>
+                          {cl.isActive ? '🔴 En Vivo' : cl.savedTranscription ? '✅ Guardada' : 'Sin transcript'}
+                        </span>
+                      </td>
+                      <td>
+                        {cl.isActive
+                          ? <button className="btn btn-sm btn-primary" onClick={() => enterClass(cl.id)}>→ Retomar</button>
+                          : <button className="btn btn-sm btn-secondary" disabled>Finalizada</button>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
+
+  if (!currentUser) return null
+
+  return (
+    <>
+      <div className="topbar">
+        <div>
+          <div className="topbar-title">🏠 Panel del Profesor</div>
+          <div className="topbar-subtitle">Hola, {(currentUser?.name || 'Profesor').split(' ')[0]} 👋 — {new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        </div>
+        <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className={`btn btn-secondary ${isRefreshing ? 'loading' : ''}`} onClick={handleRefresh} disabled={isRefreshing}>
+            🔄 {isRefreshing ? 'Actualizando...' : 'Actualizar'}
+          </button>
+          <span className="badge badge-primary">Profesor</span>
+        </div>
+      </div>
+
+      <div className="page-content fade-in">
+        {renderContent()}
       </div>
 
       {showCreateModal && (
         <CreateClassModal courseId={showCreateModal} onClose={() => setShowCreateModal(null)} />
+      )}
+
+      {showContentsModal && (
+        <ManageContentsModal courseId={showContentsModal} onClose={() => setShowContentsModal(null)} />
       )}
     </>
   )

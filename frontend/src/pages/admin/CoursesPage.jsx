@@ -18,12 +18,19 @@ function Modal({ title, onClose, children, footer }) {
 }
 
 export default function CoursesPage() {
-  const { users, courses, classes, createCourse, updateCourse, deleteCourse, enrollStudent } = useApp()
+  const { users, courses, classes, createCourse, updateCourse, deleteCourse, enrollStudent, unenrollStudent, refreshData } = useApp()
   const [modal, setModal]     = useState(null)
   const [selected, setSelected] = useState(null)
   const [search, setSearch]   = useState('')
-  const [form, setForm]       = useState({ name: '', description: '', category: '', teacherId: '' })
+  const [form, setForm]       = useState({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto' })
   const [error, setError]     = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await refreshData()
+    setIsRefreshing(false)
+  }
 
   const teachers = users.filter(u => u.role === 'teacher')
   const students = users.filter(u => u.role === 'student')
@@ -33,25 +40,56 @@ export default function CoursesPage() {
     c.category.toLowerCase().includes(search.toLowerCase())
   )
 
-  const openCreate = () => { setForm({ name: '', description: '', category: '', teacherId: '' }); setError(''); setModal('create') }
-  const openEdit   = (c) => { setSelected(c); setForm({ name: c.name, description: c.description, category: c.category, teacherId: c.teacherId || '' }); setError(''); setModal('edit') }
+  const openCreate = () => { setForm({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto' }); setError(''); setModal('create') }
+  const openEdit   = (c) => { 
+    setSelected(c); 
+    const currentTeacherId = c.teacherId?._id || c.teacherId || '';
+    setForm({ 
+      name: c.name, 
+      description: c.description, 
+      category: c.category, 
+      teacherId: currentTeacherId, 
+      estado: c.estado || 'Activo',
+      tipoInscripcion: c.tipoInscripcion || 'Abierto'
+    }); 
+    setError(''); 
+    setModal('edit') 
+  }
   const openDetail = (c) => { setSelected(c); setModal('detail') }
   const closeModal = () => { setModal(null); setSelected(null); setError('') }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.name) { setError('El nombre del curso es requerido'); return }
-    createCourse(form)
-    closeModal()
+    if (form.estado === 'En espera de docente' && form.teacherId) {
+      setError('No se puede asignar un profesor si el curso está en espera de docente');
+      return;
+    }
+    const res = await createCourse(form)
+    if (res?.success) closeModal()
+    else setError(res?.error || 'Error desconocido')
   }
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     if (!form.name) { setError('El nombre del curso es requerido'); return }
-    updateCourse(selected.id, form)
-    closeModal()
+    if (form.estado === 'En espera de docente' && form.teacherId) {
+      setError('No se puede asignar un profesor si el curso está en espera de docente');
+      return;
+    }
+    const res = await updateCourse(selected.id || selected._id, form)
+    if (res?.success) closeModal()
+    else setError(res?.error || 'Error desconocido')
   }
 
-  const handleDelete = (id) => {
-    if (window.confirm('¿Eliminar este curso y todas sus clases?')) deleteCourse(id)
+  const handleDelete = async (id) => {
+    const course = courses.find(c => (c.id || c._id) === id);
+    if (course && course.studentIds?.length > 0) {
+      if (!window.confirm('⚠️ ADVERTENCIA: Este curso tiene estudiantes inscritos. ¿Estás absolutamente seguro de eliminarlo? Esto afectará a los estudiantes.')) return;
+    } else {
+      if (!window.confirm('¿Eliminar este curso y todas sus clases?')) return;
+    }
+    
+    const res = await deleteCourse(id)
+    if (!res?.success) alert(res?.error || 'No se pudo eliminar el curso')
   }
 
   const getCourseClasses = (courseId) => classes.filter(cl => cl.courseId === courseId)
@@ -61,11 +99,12 @@ export default function CoursesPage() {
 
   const DetailModal = () => {
     if (!selected) return null
-    const course      = courses.find(c => c.id === selected.id) || selected
-    const teacher     = users.find(u => u.id === course.teacherId)
-    const enrolled    = students.filter(s => course.studentIds.includes(s.id))
-    const notEnrolled = students.filter(s => !course.studentIds.includes(s.id))
-    const courseClasses = getCourseClasses(course.id)
+    const course      = courses.find(c => (c.id || c._id) === selected.id) || selected
+    const teacherId   = course.teacherId?._id || course.teacherId
+    const teacher     = users.find(u => (u.id || u._id) === teacherId)
+    const enrolled    = students.filter(s => course.studentIds.map(String).includes(String(s.id || s._id)))
+    const notEnrolled = students.filter(s => !course.studentIds.map(String).includes(String(s.id || s._id)))
+    const courseClasses = getCourseClasses(course.id || course._id)
 
     return (
       <div className="modal-overlay" onClick={closeModal}>
@@ -84,12 +123,11 @@ export default function CoursesPage() {
                 <div className="report-row"><span className="report-label">Estudiantes</span><span className="report-value">{enrolled.length}</span></div>
                 <div className="report-row"><span className="report-label">Clases</span><span className="report-value">{courseClasses.length}</span></div>
 
-                {/* Assign teacher */}
                 <div className="form-group" style={{ marginTop: 16 }}>
                   <label className="form-label">Asignar Profesor</label>
-                  <select className="form-select" value={course.teacherId || ''} onChange={e => updateCourse(course.id, { teacherId: e.target.value || null })}>
+                  <select className="form-select" value={ teacherId || '' } onChange={e => updateCourse(course.id || course._id, { teacherId: e.target.value || null })}>
                     <option value="">— Sin asignar —</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {teachers.map(t => <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>)}
                   </select>
                 </div>
               </div>
@@ -99,9 +137,10 @@ export default function CoursesPage() {
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Estudiantes inscritos ({enrolled.length})</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
                   {enrolled.map(s => (
-                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-page)' }}>
+                    <div key={s.id || s._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-page)' }}>
                       <Avatar user={s} size="sm" />
                       <span style={{ fontSize: 12, flex: 1 }}>{s.name}</span>
+                      <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => unenrollStudent(course.id || course._id, s.id || s._id)}>✕</button>
                     </div>
                   ))}
                   {enrolled.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sin estudiantes aún</div>}
@@ -112,10 +151,10 @@ export default function CoursesPage() {
                     <div style={{ fontWeight: 600, fontSize: 13, marginTop: 14, marginBottom: 8 }}>Agregar estudiante</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {notEnrolled.map(s => (
-                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div key={s.id || s._id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <Avatar user={s} size="sm" />
                           <span style={{ fontSize: 12, flex: 1 }}>{s.name}</span>
-                          <button className="btn btn-sm btn-success" onClick={() => enrollStudent(course.id, s.id)}>+ Inscribir</button>
+                          <button className="btn btn-sm btn-success" onClick={() => enrollStudent(course.id || course._id, s.id || s._id)}>+ Inscribir</button>
                         </div>
                       ))}
                     </div>
@@ -138,6 +177,9 @@ export default function CoursesPage() {
           <div className="topbar-subtitle">{courses.length} cursos en el sistema</div>
         </div>
         <div className="topbar-right">
+          <button className={`btn btn-secondary ${isRefreshing ? 'loading' : ''}`} onClick={handleRefresh} disabled={isRefreshing} style={{ marginRight: 8 }}>
+            🔄 {isRefreshing ? 'Actualizando...' : 'Actualizar'}
+          </button>
           <button className="btn btn-primary" onClick={openCreate}>➕ Nuevo Curso</button>
         </div>
       </div>
@@ -159,20 +201,24 @@ export default function CoursesPage() {
                   <th>Estudiantes</th>
                   <th>Clases</th>
                   <th>Estado</th>
+                  <th>Tipo</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={7}><div className="empty-state"><span className="empty-state-icon">📚</span><div className="empty-state-title">Sin cursos</div></div></td></tr>
+                  <tr><td colSpan={8}><div className="empty-state"><span className="empty-state-icon">📚</span><div className="empty-state-title">Sin cursos</div></div></td></tr>
                 ) : filtered.map(c => {
-                  const teacher      = users.find(u => u.id === c.teacherId)
-                  const courseClasses = getCourseClasses(c.id)
+                  const teacherId   = c.teacherId?._id || c.teacherId
+                  const teacher     = users.find(u => (u.id || u._id) === teacherId)
+                  const courseClasses = getCourseClasses(c.id || c._id)
+                  const pendingCount = (c.pendingStudentIds || []).length
+
                   return (
-                    <tr key={c.id}>
+                    <tr key={c.id || c._id}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--primary-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--primary-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
                             {THUMB_EMOJIS[c.category] || '📖'}
                           </div>
                           <div>
@@ -190,14 +236,34 @@ export default function CoursesPage() {
                           </div>
                         ) : <span className="badge badge-warning">Sin asignar</span>}
                       </td>
-                      <td><span className="badge badge-info">{c.studentIds.length} 👥</span></td>
+                      <td>
+                        <span className="badge badge-info">{c.studentIds.length} 👥</span>
+                        {pendingCount > 0 && (
+                          <span className="badge badge-danger" style={{ marginLeft: 4, fontSize: 10 }}>{pendingCount} ⏳</span>
+                        )}
+                      </td>
                       <td><span className="badge badge-gray">{courseClasses.length} clases</span></td>
-                      <td><span className={`badge ${c.status === 'active' ? 'badge-success' : 'badge-gray'}`}>{c.status === 'active' ? 'Activo' : 'Inactivo'}</span></td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span className={`badge ${
+                            c.estado === 'Activo' ? 'badge-success' : 
+                            c.estado === 'Pausado' ? 'badge-warning' : 
+                            c.estado === 'Desactivado' ? 'badge-danger' : 'badge-gray'
+                          }`} style={{ fontSize: 10 }}>
+                            {c.estado || 'Activo'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`badge ${c.tipoInscripcion === 'Cerrado' ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: 10 }}>
+                          {c.tipoInscripcion === 'Cerrado' ? '🔒 Cerrado' : '🔓 Abierto'}
+                        </span>
+                      </td>
                       <td>
                         <div className="actions">
-                          <button className="btn btn-sm btn-secondary" onClick={() => openDetail(c)}>👁️ Ver</button>
+                          <button className="btn btn-sm btn-secondary" onClick={() => openDetail(c)}>👁️</button>
                           <button className="btn btn-sm btn-secondary" onClick={() => openEdit(c)}>✏️</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id)}>🗑️</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDelete(c.id || c._id)}>🗑️</button>
                         </div>
                       </td>
                     </tr>
@@ -226,18 +292,34 @@ export default function CoursesPage() {
               <label className="form-label">Profesor</label>
               <select className="form-select" value={form.teacherId} onChange={e => setForm({ ...form, teacherId: e.target.value })}>
                 <option value="">— Sin asignar —</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {teachers.map(t => <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>)}
               </select>
             </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Estado del Curso</label>
+            <select className="form-select" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>
+              <option value="Activo">✅ Activo</option>
+              <option value="Desactivado">❌ Desactivado</option>
+              <option value="En espera de docente">⏳ En espera de docente</option>
+              <option value="Pausado">⏸️ Pausado</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Tipo de Inscripción</label>
+            <select className="form-select" value={form.tipoInscripcion} onChange={e => setForm({ ...form, tipoInscripcion: e.target.value })}>
+              <option value="Abierto">🔓 Abierto (Solicitud)</option>
+              <option value="Cerrado">🔒 Cerrado (Privado)</option>
+            </select>
           </div>
           {error && <div className="form-error">⚠️ {error}</div>}
         </Modal>
       )}
 
       {modal === 'edit' && selected && (
-        <Modal title={`Editar: ${selected.name}`} onClose={closeModal}
-          footer={<><button className="btn btn-secondary" onClick={closeModal}>Cancelar</button><button className="btn btn-primary" onClick={handleEdit}>Guardar</button></>}>
-          <div className="form-group"><label className="form-label">Nombre</label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+        <Modal title="Editar Curso" onClose={closeModal}
+          footer={<><button className="btn btn-secondary" onClick={closeModal}>Cancelar</button><button className="btn btn-primary" onClick={handleEdit}>Guardar Cambios</button></>}>
+          <div className="form-group"><label className="form-label">Nombre del curso *</label><input className="form-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
           <div className="form-group"><label className="form-label">Descripción</label><textarea className="form-textarea" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
           <div className="form-row">
             <div className="form-group">
@@ -250,9 +332,25 @@ export default function CoursesPage() {
               <label className="form-label">Profesor</label>
               <select className="form-select" value={form.teacherId} onChange={e => setForm({ ...form, teacherId: e.target.value })}>
                 <option value="">— Sin asignar —</option>
-                {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {teachers.map(t => <option key={t.id || t._id} value={t.id || t._id}>{t.name}</option>)}
               </select>
             </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Estado</label>
+            <select className="form-select" value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>
+              <option value="Activo">✅ Activo</option>
+              <option value="Desactivado">❌ Desactivado</option>
+              <option value="En espera de docente">⏳ En espera de docente</option>
+              <option value="Pausado">⏸️ Pausado</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Tipo de Inscripción</label>
+            <select className="form-select" value={form.tipoInscripcion} onChange={e => setForm({ ...form, tipoInscripcion: e.target.value })}>
+              <option value="Abierto">🔓 Abierto (Solicitud)</option>
+              <option value="Cerrado">🔒 Cerrado (Privado)</option>
+            </select>
           </div>
           {error && <div className="form-error">⚠️ {error}</div>}
         </Modal>
