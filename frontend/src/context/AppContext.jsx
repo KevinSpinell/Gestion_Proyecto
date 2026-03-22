@@ -100,9 +100,7 @@ export function AppProvider({ children }) {
   const [users, setUsers] = useState(() => {
     try { return JSON.parse(localStorage.getItem('classai_users')) || SEED_USERS } catch { return SEED_USERS }
   })
-  const [courses, setCourses] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('classai_courses')) || SEED_COURSES } catch { return SEED_COURSES }
-  })
+  const [courses, setCourses] = useState([])
   const [classes, setClasses] = useState(() => {
     try { return JSON.parse(localStorage.getItem('classai_classes')) || SEED_CLASSES } catch { return SEED_CLASSES }
   })
@@ -112,12 +110,31 @@ export function AppProvider({ children }) {
   const [activePage, setActivePage] = useState('dashboard')
   const [activeClassId, setActiveClassId] = useState(null)
 
-  // Persist changes
+  // Persist local-only state (users/classes still in localStorage for now)
   useEffect(() => { localStorage.setItem('classai_users', JSON.stringify(users)) }, [users])
-  useEffect(() => { localStorage.setItem('classai_courses', JSON.stringify(courses)) }, [courses])
   useEffect(() => { localStorage.setItem('classai_classes', JSON.stringify(classes)) }, [classes])
 
-  // Cross-tab real-time sync
+  // ── Fetch real courses from MongoDB on mount ────────────────────────────────
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/courses')
+        if (!res.ok) throw new Error('API error')
+        const data = await res.json()
+        // Normalize: ensure each course has an `id` field (= _id) for FE compat
+        setCourses(data.map(c => ({ ...c, id: c._id })))
+        // Clear any stale seed data from localStorage
+        localStorage.removeItem('classai_courses')
+      } catch {
+        // Backend offline — fall back to seed data so UI doesn't break
+        const cached = localStorage.getItem('classai_courses')
+        setCourses(cached ? JSON.parse(cached) : SEED_COURSES)
+      }
+    }
+    fetchCourses()
+  }, [])
+
+  // Cross-tab real-time sync (classes)
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'classai_classes') {
@@ -303,19 +320,57 @@ export function AppProvider({ children }) {
     setClasses(prev => prev.filter(cl => cl.courseId !== id))
   }
 
-  // DB STUB: replace with → POST /api/courses/:id/enroll
-  const enrollStudent = (courseId, studentId) => {
-    setCourses(prev => prev.map(c =>
-      c.id === courseId && !c.studentIds.includes(studentId)
-        ? { ...c, studentIds: [...c.studentIds, studentId] }
-        : c
-    ))
+  // RF-08: POST /api/courses/:id/enroll — persists to MongoDB
+  const enrollStudent = async (courseId, studentId) => {
+    // Optimistic check: already enrolled locally
+    const course = courses.find(c => (c.id || c._id) === courseId)
+    const normalizedStudentId = String(studentId)
+    if (course && course.studentIds.map(String).includes(normalizedStudentId)) {
+      return { success: false, alreadyEnrolled: true, error: 'Ya estás inscrito en este curso' }
+    }
+
+    try {
+      const res = await fetch(`http://localhost:3001/api/courses/${courseId}/enroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      })
+      const json = await res.json()
+      if (!res.ok) return { success: false, alreadyEnrolled: !!json.alreadyEnrolled, error: json.message || 'Error al inscribirse' }
+
+      // Update local state with the returned course data
+      setCourses(prev => prev.map(c =>
+        (c.id || c._id) === courseId
+          ? { ...c, studentIds: json.studentIds || [...(c.studentIds), studentId] }
+          : c
+      ))
+      return { success: true }
+    } catch {
+      return { success: false, error: 'No se pudo conectar al servidor' }
+    }
   }
 
-  const unenrollStudent = (courseId, studentId) => {
-    setCourses(prev => prev.map(c =>
-      c.id === courseId ? { ...c, studentIds: c.studentIds.filter(id => id !== studentId) } : c
-    ))
+  // RF-08: POST /api/courses/:id/unenroll — persists to MongoDB
+  const unenrollStudent = async (courseId, studentId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/courses/${courseId}/unenroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId }),
+      })
+      const json = await res.json()
+      if (!res.ok) return { success: false, error: json.message || 'Error al salir del curso' }
+
+      // Update local state
+      setCourses(prev => prev.map(c =>
+        (c.id || c._id) === courseId
+          ? { ...c, studentIds: json.studentIds || c.studentIds.filter(id => String(id) !== String(studentId)) }
+          : c
+      ))
+      return { success: true }
+    } catch {
+      return { success: false, error: 'No se pudo conectar al servidor' }
+    }
   }
 
   // ── CLASSES ────────────────────────────────
@@ -457,13 +512,13 @@ export function AppProvider({ children }) {
   }
 
   // ── HELPERS ────────────────────────────────
-  const getUserById = (id) => users.find(u => u.id === id)
-  const getCourseById = (id) => courses.find(c => c.id === id)
-  const getClassById = (id) => classes.find(cl => cl.id === id)
-  const getClassesForCourse = (courseId) => classes.filter(cl => cl.courseId === courseId)
-  const getCoursesForTeacher = (teacherId) => courses.filter(c => c.teacherId === teacherId)
-  const getCoursesForStudent = (studentId) => courses.filter(c => c.studentIds.includes(studentId))
-  const getActiveClasses = () => classes.filter(cl => cl.isActive)
+  const getUserById      = (id) => users.find(u => String(u.id || u._id) === String(id))
+  const getCourseById    = (id) => courses.find(c => String(c.id || c._id) === String(id))
+  const getClassById     = (id) => classes.find(cl => String(cl.id || cl._id) === String(id))
+  const getClassesForCourse  = (courseId) => classes.filter(cl => String(cl.courseId) === String(courseId))
+  const getCoursesForTeacher = (teacherId) => courses.filter(c => String(c.teacherId) === String(teacherId))
+  const getCoursesForStudent = (studentId) => courses.filter(c => c.studentIds.map(String).includes(String(studentId)))
+  const getActiveClasses     = () => classes.filter(cl => cl.isActive)
 
   const value = {
     // State
