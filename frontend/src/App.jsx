@@ -10,6 +10,7 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import UsersPage from './pages/admin/UsersPage'
 import CoursesPage from './pages/admin/CoursesPage'
 import ReportsPage from './pages/admin/ReportsPage'
+import EnrollmentRequestsPage from './pages/admin/EnrollmentRequestsPage'
 
 // Pages – Teacher
 import TeacherDashboard from './pages/teacher/TeacherDashboard'
@@ -56,10 +57,11 @@ function InnerApp() {
 
 function AdminRouter({ page }) {
   switch (page) {
-    case 'users':    return <UsersPage />
-    case 'courses':  return <CoursesPage />
-    case 'reports':  return <ReportsPage />
-    default:         return <AdminDashboard />
+    case 'users':      return <UsersPage />
+    case 'courses':    return <CoursesPage />
+    case 'reports':    return <ReportsPage />
+    case 'enrollment': return <EnrollmentRequestsPage />
+    default:           return <AdminDashboard />
   }
 }
 

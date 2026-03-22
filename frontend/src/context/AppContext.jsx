@@ -128,16 +128,34 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('storage', handler)
   }, [])
 
-  // ── AUTH ───────────────────────────────────
-  // DB STUB: replace with → POST /api/auth/login
-  const login = (username, password) => {
-    const user = users.find(u => u.username === username && u.password === password)
-    if (user) {
-      setCurrentUser(user)
-      localStorage.setItem('classai_session', JSON.stringify(user))
-      return { success: true, user }
+  // ── AUTH ───────────────────────────────────────────────────────────────────
+  // POST /api/auth/login — verifica email + contraseña contra MongoDB
+  const login = async (email, password) => {
+    try {
+      const res = await fetch('http://localhost:3001/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const json = await res.json()
+
+      // 403 = cuenta bloqueada o pendiente de aprobación
+      if (res.status === 403) return { success: false, error: json.message }
+
+      if (res.ok) {
+        const user = { ...json, id: json.id || json._id }
+        setCurrentUser(user)
+        localStorage.setItem('classai_session', JSON.stringify(user))
+        return { success: true, user }
+      }
+
+      // 400 / 401 — credenciales incorrectas
+      return { success: false, error: json.message || 'Credenciales incorrectas' }
+
+    } catch {
+      // ── Error de red: backend no disponible ───────────────────────────────
+      return { success: false, error: 'No se pudo conectar al servidor. Verifica que el backend esté corriendo.' }
     }
-    return { success: false, error: 'Credenciales incorrectas' }
   }
 
   const logout = () => {

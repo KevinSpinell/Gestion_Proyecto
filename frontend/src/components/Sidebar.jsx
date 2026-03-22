@@ -1,4 +1,5 @@
 import { useApp } from '../context/AppContext'
+import { useState, useEffect } from 'react'
 
 const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#DC2626', '#D97706', '#0891B2', '#7C3AED']
 const colorForId = (id) => AVATAR_COLORS[id?.charCodeAt(1) % AVATAR_COLORS.length] || '#7C3AED'
@@ -15,15 +16,26 @@ export function Avatar({ user, size = 'md', style = {} }) {
 
 export default function Sidebar() {
   const { currentUser, logout, activePage, setActivePage, getActiveClasses } = useApp()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  // Fetch pending enrollment count for the admin badge
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return
+    fetch('http://localhost:3001/api/students/pending')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setPendingCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {})
+  }, [currentUser?.role, activePage])
 
   const activeClasses = getActiveClasses()
 
   const navMap = {
     admin: [
-      { id: 'dashboard', icon: '🏠', label: 'Inicio' },
-      { id: 'users',     icon: '👥', label: 'Usuarios' },
-      { id: 'courses',   icon: '📚', label: 'Cursos' },
-      { id: 'reports',   icon: '📊', label: 'Reportes' },
+      { id: 'dashboard',  icon: '🏠', label: 'Inicio' },
+      { id: 'users',      icon: '👥', label: 'Usuarios' },
+      { id: 'courses',    icon: '📚', label: 'Cursos' },
+      { id: 'enrollment', icon: '📋', label: 'Solicitudes de Inscripción', badge: pendingCount },
+      { id: 'reports',    icon: '📊', label: 'Reportes' },
     ],
     teacher: [
       { id: 'dashboard', icon: '🏠', label: 'Inicio' },
@@ -63,7 +75,8 @@ export default function Sidebar() {
           >
             <span className="item-icon">{item.icon}</span>
             {item.label}
-            {item.id === 'reports' && <span className="item-badge">!</span>}
+            {item.badge > 0 && <span className="item-badge">{item.badge}</span>}
+            {item.id === 'reports' && !item.badge && <span className="item-badge">!</span>}
           </div>
         ))}
 
