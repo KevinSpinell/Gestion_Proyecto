@@ -329,19 +329,34 @@ export function AppProvider({ children }) {
     }
   }
 
-  // DB STUB: replace with → PUT /api/users/:id
-  const updateUser = (id, data) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u))
+  const updateUser = async (role, id, data) => {
+    try {
+      const endpoint = role === 'teacher' ? `http://localhost:3001/api/teachers/${id}` : `http://localhost:3001/api/students/${id}`;
+      const res = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || json.error || 'Error al actualizar' };
+      await refreshData();
+      return { success: true, user: json };
+    } catch (err) {
+      return { success: false, error: 'Error de red al actualizar usuario' };
+    }
   }
 
-  // DB STUB: replace with → DELETE /api/users/:id
-  const deleteUser = (id) => {
-    setUsers(prev => prev.filter(u => u.id !== id))
-    setCourses(prev => prev.map(c => ({
-      ...c,
-      teacherId: c.teacherId === id ? null : c.teacherId,
-      studentIds: c.studentIds.filter(sid => sid !== id),
-    })))
+  const deleteUser = async (role, id) => {
+    try {
+      const endpoint = role === 'teacher' ? `http://localhost:3001/api/teachers/${id}` : `http://localhost:3001/api/students/${id}`;
+      const res = await fetch(endpoint, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || json.error || 'Error al eliminar' };
+      await refreshData();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Error de red al eliminar usuario' };
+    }
   }
 
   // ── COURSES ────────────────────────────────
