@@ -105,8 +105,11 @@ backend/src/
 
 ### `Course` — Cursos
 ```js
-{ name, description, category, teacherId(ref:User), studentIds([ref:User]),
-  status: ['active','inactive'], createdAt }
+{ name, description, category, teacherId(ref:Teacher), studentIds([ref:Student]),
+  contents([CourseContentSchema]), 
+  estado: ['Activo', 'Desactivado', 'En espera de docente', 'Pausado'],
+  solicitarDespausa: Boolean,
+  createdAt }
 ```
 
 ### `Class` — Sesiones de clase
@@ -132,9 +135,11 @@ backend/src/
 | GET | `/api/courses` | Listar todos los cursos |
 | GET | `/api/courses/teacher/:teacherId` | Cursos de un profesor |
 | GET | `/api/courses/student/:studentId` | Cursos de un estudiante |
-| POST | `/api/courses/:id/enroll` | **Inscribir estudiante** `{ studentId }` |
+| POST /api/courses/:id/enroll | **Inscribir estudiante** `{ studentId }` |
 | POST | `/api/courses/:id/unenroll` | **Desinscribir estudiante** |
 | POST/GET | `/api/courses` | CRUD de cursos |
+| POST | `/api/courses/:id/contents` | **Subir material** (Multipart/form-data) |
+| DELETE | `/api/courses/:id/contents/:contentId` | **Eliminar material** |
 | GET/POST | `/api/classes` | Listar / Crear clase |
 | PATCH | `/api/classes/:id/activate` | Activar clase en vivo |
 | GET | `/api/health` | Health check |
@@ -158,9 +163,9 @@ frontend/src/
 │   ├── admin/
 │   │   ├── AdminDashboard.jsx
 │   │   ├── UsersPage.jsx
-│   │   ├── CoursesPage.jsx
+│   │   ├── CoursesPage.jsx       # Gestión de cursos (Vista de Tabla restaurada)
 │   │   ├── ReportsPage.jsx
-│   │   └── EnrollmentRequestsPage.jsx
+│   │   └── EnrollmentRequestsPage.jsx # Unificado: Registro de usuarios + Inscripciones a cursos
 │   ├── teacher/
 │   │   ├── TeacherDashboard.jsx
 │   │   └── ClassroomTeacher.jsx
@@ -180,8 +185,8 @@ frontend/src/
 
 ### Renderizado por rol (`App.jsx`)
 - `admin` → `AdminRouter` (pages: dashboard, users, courses, reports, enrollment)
-- `teacher` → `TeacherRouter` (page: dashboard)
-- `student` → `StudentRouter` (page: dashboard — solo `StudentDashboard`)
+- `teacher` → `TeacherRouter` (page: dashboard - Soporte multi-pestaña)
+- `student` → `StudentRouter` (page: dashboard - Navegación lateral sincronizada con activePage)
 - Classroom especial para teacher/student cuando `activePage === 'classroom'`
 
 ---
@@ -202,19 +207,28 @@ frontend/src/
 | RF | Nombre | Estado |
 |---|---|---|
 | RF-01 | Registro de estudiante | ✅ Backend completo (API + aprobación admin) |
-| RF-02 | Registro de profesor | ✅ Backend + frontend (AdminDashboard → UsersPage) |
-| RF-08 | Inscripción en curso | 🟡 Backend completo — frontend aún usa stub local |
+| RF-02 | Registro de profesor | ✅ Backend + frontend (UsersPage) |
+| RF-06 | Gestión de cursos | ✅ Backend + frontend (CoursesPage) |
+| RF-07 | Gestión de contenidos | ✅ Backend + frontend (TeacherDashboard - Materiales) |
+| RF-08 | Inscripción en curso | ✅ Backend completo + Sistema de Solicitudes (Aprobar/Rechazar) |
+| RF-XX | Restauración UI Admin | ✅ Reversión a tabla clásica + Separación de solicitudes |
+| RF-XX | Navegación Estudiante | ✅ Sidebar sincronizado con Dashboard interno |
 
 ---
 
 ## 9. Reglas de negocio importantes
 
 1. **Estudiante no puede loguear** hasta ser `aprobado:true` por el admin.
-2. **Profesor/Teacher tiene estado** (`estado`); si es `false`, no puede loguear.
-3. **Inscripción en curso**: usa `$addToSet` en MongoDB → no se puede repetir la misma inscripción.
-4. **Passwords**: siempre hasheados con `bcryptjs` antes de guardar.
-5. **Documento, teléfono, correo** son únicos en cada colección.
-6. **CORS**: sólo acepta peticiones de `http://localhost:5173` (configurable en `.env`).
+2. **Profesor tiene estado** (`estado`); si es `false`, no puede loguear.
+3. **Validación de Curso "En espera de docente"**: No puede tener un profesor asignado. El sistema bloquea esta combinación.
+4. **Permisos de solo lectura**: En cursos con estado distinto a `Activo`, el profesor NO puede crear clases ni subir materiales.
+5. **Solicitud de despausa**: El profesor puede marcar `solicitarDespausa: true` desde su panel, notificando visualmente al administrador.
+6. **Inscripción en curso**: usa `$addToSet` en MongoDB → no se puede repetir la misma inscripción.
+7. **Passwords**: siempre hasheados con `bcryptjs` antes de guardar.
+8. **CORS**: sólo acepta peticiones de `http://localhost:5173`.
+9. **Archivos**: límite de 50MB, solo se permiten extensiones documentales (.pdf, .docx, .pptx). No se admiten archivos de video (.mp4).
+10. **Visibilidad de Interfaz**: Todos los botones de acción crítica (Aprobar, Inscribir) deben usar `color: white` para asegurar contraste sobre fondos de éxito/primarios.
+11. **Sincronización de Dashboard**: Los Dashboards que usan pestañas internas deben sincronizar su estado con `activePage` del contexto global para mantener el Sidebar coherente.
 
 ---
 

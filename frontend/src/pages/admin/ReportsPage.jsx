@@ -3,8 +3,15 @@ import { useApp } from '../../context/AppContext'
 import { Avatar } from '../../components/Sidebar'
 
 export default function ReportsPage() {
-  const { users, courses, classes } = useApp()
+  const { users, courses, classes, refreshData } = useApp()
   const [tab, setTab] = useState('students')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await refreshData()
+    setIsRefreshing(false)
+  }
 
   const teachers  = users.filter(u => u.role === 'teacher')
   const students  = users.filter(u => u.role === 'student')
@@ -68,6 +75,9 @@ export default function ReportsPage() {
           <div className="topbar-subtitle">Análisis general del sistema</div>
         </div>
         <div className="topbar-right">
+          <button className={`btn btn-secondary ${isRefreshing ? 'loading' : ''}`} onClick={handleRefresh} disabled={isRefreshing} style={{ marginRight: 8 }}>
+            🔄 {isRefreshing ? 'Actualizando...' : 'Actualizar'}
+          </button>
           <button className="btn btn-success" onClick={downloadCSV}>⬇️ Exportar CSV</button>
         </div>
       </div>
