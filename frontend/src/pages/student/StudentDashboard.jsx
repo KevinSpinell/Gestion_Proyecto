@@ -82,8 +82,9 @@ export default function StudentDashboard() {
   const {
     currentUser, users, courses, classes, activePage,
     enrollStudent, unenrollStudent, requestEnrollment,
+    getCoursesForTeacher, getClassesForCourse,
     getCoursesForStudent, getActiveClasses, joinClass,
-    setActivePage, setActiveClassId,
+    setActivePage, setActiveClassId, fetchGradesByStudent, grades,
   } = useApp()
 
   const [tab, setTab]               = useState('my')
@@ -98,19 +99,29 @@ export default function StudentDashboard() {
     if (activePage === 'dashboard' || activePage === 'my-courses') setTab('my')
     else if (activePage === 'explore') setTab('explore')
     else if (activePage === 'history') setTab('history')
+    else if (activePage === 'grades') setTab('grades')
   }, [activePage])
+
+  const studentId = currentUser?.id || currentUser?._id
+
+  useEffect(() => {
+    if (tab === 'grades' && studentId) {
+      fetchGradesByStudent(studentId)
+    }
+  }, [tab, studentId])
+
+  if (!currentUser) return null
 
   const showToast = (message, type = 'success') => setToast({ message, type })
 
-  const studentId  = currentUser.id || currentUser._id
-  const myCourses  = getCoursesForStudent(studentId)
-  const activeClasses = getActiveClasses()
+  const myCourses  = getCoursesForStudent(studentId) || []
+  const activeClasses = getActiveClasses() || []
 
   // Active classes I'm enrolled in
   const myActiveClasses = activeClasses.filter(cl => {
     const course = courses.find(c => (c.id || c._id) === cl.courseId)
-    return course && course.studentIds.map(String).includes(String(studentId))
-  })
+    return course && (course.studentIds || []).map(String).includes(String(studentId))
+  }) || []
 
   const enterClass = (classId) => {
     joinClass(classId, studentId)
@@ -120,7 +131,7 @@ export default function StudentDashboard() {
 
   // Courses not yet enrolled — active AND open only, filtered by search
   const explored = courses.filter(c =>
-    !c.studentIds.map(String).includes(String(studentId)) &&
+    !(c.studentIds || []).map(String).includes(String(studentId)) &&
     c.estado === 'Activo' &&
     (c.tipoInscripcion === 'Abierto' || !c.tipoInscripcion) &&
     (
@@ -131,6 +142,7 @@ export default function StudentDashboard() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleEnrollClick = (course) => {
+    if (!course) return
     // Check if course is active
     if (course.estado !== 'Activo') {
       showToast('Este curso no está disponible para inscripción', 'info')
@@ -147,7 +159,7 @@ export default function StudentDashboard() {
       return
     }
     // Flujo alternativo 5.1: ya inscrito
-    if (course.studentIds.map(String).includes(String(studentId))) {
+    if ((course.studentIds || []).map(String).includes(String(studentId))) {
       showToast('Ya estás inscrito en este curso', 'info')
       return
     }
@@ -197,7 +209,7 @@ export default function StudentDashboard() {
       <div className="topbar">
         <div>
           <div className="topbar-title">🏠 Portal del Estudiante</div>
-          <div className="topbar-subtitle">Hola, {currentUser.name.split(' ')[0]} 👋</div>
+          <div className="topbar-subtitle">Hola, {currentUser.name?.split(' ')[0]} 👋</div>
         </div>
         <div className="topbar-right">
           <span className="badge badge-info">Estudiante</span>
@@ -210,7 +222,7 @@ export default function StudentDashboard() {
           {[
             { label: 'Mis Cursos',        value: myCourses.length,      icon: '📚', bg: '#EDE9FE', color: '#7C3AED' },
             { label: 'Clases Activas',    value: myActiveClasses.length, icon: '🔴', bg: '#FEF2F2', color: '#DC2626' },
-            { label: 'Clases Guardadas',  value: classes.filter(cl => cl.attendance.some(a => String(a.userId) === String(studentId)) && cl.savedTranscription).length, icon: '💾', bg: '#ECFDF5', color: '#059669' },
+            { label: 'Clases Guardadas',  value: classes.filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId)) && cl.savedTranscription).length, icon: '💾', bg: '#ECFDF5', color: '#059669' },
             { label: 'Cursos Disponibles',value: explored.length,        icon: '🔍', bg: '#EFF6FF', color: '#2563EB' },
           ].map(s => (
             <div className="stat-card" key={s.label}>
@@ -244,7 +256,7 @@ export default function StudentDashboard() {
                       <div className="lobby-sub">{course?.name}</div>
                       <div className="lobby-meta">
                         <span>👨‍🏫 {teacher?.name || 'Profesor'}</span>
-                        <span>👥 {cl.participantIds.length} conectados</span>
+                        <span>👥 {(cl.participantIds || []).length} conectados</span>
                         <span>🕐 {cl.startTime || 'En curso'}</span>
                       </div>
                     </div>
@@ -267,6 +279,9 @@ export default function StudentDashboard() {
           <button className={`tab-btn ${tab === 'history' ? 'active' : ''}`} onClick={() => setActivePage('history')}>
             Mi Historial
           </button>
+          <button className={`tab-btn ${tab === 'grades' ? 'active' : ''}`} onClick={() => setActivePage('grades')}>
+            Mis Calificaciones
+          </button>
         </div>
 
         {/* MY COURSES */}
@@ -276,16 +291,16 @@ export default function StudentDashboard() {
               <span className="empty-state-icon">📚</span>
               <div className="empty-state-title">Aún no estás inscrito en ningún curso</div>
               <div className="empty-state-desc">Explora los cursos disponibles y únete</div>
-              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setTab('explore')}>Explorar Cursos →</button>
+              <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setActivePage('explore')}>Explorar Cursos →</button>
             </div>
           ) : (
             <div className="course-grid">
               {myCourses.map(c => {
                 const cId          = c.id || c._id
                 const teacher      = users.find(u => (u.id || u._id) === c.teacherId)
-                const courseClasses = classes.filter(cl => cl.courseId === cId)
+                const courseClasses = classes.filter(cl => (cl.courseId?._id || cl.courseId) === cId)
                 const hasActive    = courseClasses.some(cl => cl.isActive)
-                const myAttended   = courseClasses.filter(cl => cl.attendance.some(a => String(a.userId) === String(studentId)))
+                const myAttended   = courseClasses.filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId)))
                 const isLeaving    = unenrollLoading === cId
                 return (
                   <div key={cId} className="course-card">
@@ -334,7 +349,6 @@ export default function StudentDashboard() {
               />
             </div>
 
-            {/* Flujo alternativo 2.1: no hay cursos activos disponibles */}
             {explored.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-state-icon">🔍</span>
@@ -342,52 +356,44 @@ export default function StudentDashboard() {
                 <div className="empty-state-desc">Pronto habrá nuevos cursos publicados por los profesores.</div>
               </div>
             ) : (
-              <>
-                {/* Cursos activos / disponibles */}
-                {explored.length > 0 && (
-                  <div className="course-grid">
-                    {explored.map(c => {
-                      const cId    = c.id || c._id
-                      const teacher = users.find(u => (u.id || u._id) === c.teacherId)
-                      const isPending = (c.pendingStudentIds || []).map(String).includes(String(studentId))
-                      return (
-                        <div key={cId} className="course-card">
-                          <div className="course-card-thumb" style={{ background: 'var(--primary-bg)' }}>
-                            {THUMB[c.category] || '📖'}
-                          </div>
-                          <div className="course-card-body">
-                            <div className="course-card-cat">{c.category}</div>
-                            <div className="course-card-name">{c.name}</div>
-                            <div className="course-card-desc">{c.description}</div>
-                            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-                              <span className="badge badge-success">✅ Disponible</span>
-                              <span className="badge badge-gray">👥 {c.studentIds?.length || 0} inscritos</span>
-                              {isPending && <span className="badge badge-info">⏳ Pendiente</span>}
-                            </div>
-                            <div className="course-card-footer">
-                              <div className="course-card-teacher">
-                                {teacher && <Avatar user={teacher} size="sm" />}
-                                <span>{teacher?.name || 'Sin profesor'}</span>
-                              </div>
-                              <button
-                                className="btn btn-sm btn-primary"
-                                style={{ color: 'white' }}
-                                onClick={() => handleEnrollClick(c)}
-                                disabled={isPending}
-                              >
-                                {isPending ? 'Solicitado' : '+ Inscribirme'}
-                              </button>
-                            </div>
-                          </div>
+              <div className="course-grid">
+                {explored.map(c => {
+                  const cId    = c.id || c._id
+                  const teacher = users.find(u => (u.id || u._id) === c.teacherId)
+                  const isPending = (c.pendingStudentIds || []).map(String).includes(String(studentId))
+                  return (
+                    <div key={cId} className="course-card">
+                      <div className="course-card-thumb" style={{ background: 'var(--primary-bg)' }}>
+                        {THUMB[c.category] || '📖'}
+                      </div>
+                      <div className="course-card-body">
+                        <div className="course-card-cat">{c.category}</div>
+                        <div className="course-card-name">{c.name}</div>
+                        <div className="course-card-desc">{c.description}</div>
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                          <span className="badge badge-success">✅ Disponible</span>
+                          <span className="badge badge-gray">👥 {(c.studentIds || []).length} inscritos</span>
+                          {isPending && <span className="badge badge-info">⏳ Pendiente</span>}
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Flujo alternativo 5.2: cursos cerrados/inactivos */}
-
-              </>
+                        <div className="course-card-footer">
+                          <div className="course-card-teacher">
+                            {teacher && <Avatar user={teacher} size="sm" />}
+                            <span>{teacher?.name || 'Sin profesor'}</span>
+                          </div>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            style={{ color: 'white' }}
+                            onClick={() => handleEnrollClick(c)}
+                            disabled={isPending}
+                          >
+                            {isPending ? 'Solicitado' : '+ Inscribirme'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </>
         )}
@@ -401,9 +407,9 @@ export default function StudentDashboard() {
                   <tr><th>Clase</th><th>Curso</th><th>Fecha</th><th>Transcripción</th><th>Resumen IA</th></tr>
                 </thead>
                 <tbody>
-                  {classes.filter(cl => cl.attendance.some(a => String(a.userId) === String(studentId))).length === 0 ? (
+                  {(classes || []).filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId))).length === 0 ? (
                     <tr><td colSpan={5}><div className="empty-state"><span className="empty-state-icon">📋</span><div className="empty-state-title">Aún no has asistido a ninguna clase</div></div></td></tr>
-                  ) : classes.filter(cl => cl.attendance.some(a => String(a.userId) === String(studentId))).map(cl => {
+                  ) : (classes || []).filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId))).map(cl => {
                     const course = courses.find(c => (c.id || c._id) === cl.courseId)
                     return (
                       <tr key={cl.id || cl._id}>
@@ -426,6 +432,88 @@ export default function StudentDashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* GRADES */}
+        {tab === 'grades' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {myCourses.length === 0 ? (
+              <div className="empty-state">
+                <span className="empty-state-icon">📝</span>
+                <div className="empty-state-title">Aún no tienes calificaciones</div>
+                <div className="empty-state-desc">Inscríbete en cursos para empezar tu proceso académico</div>
+              </div>
+            ) : (
+              myCourses.map(c => {
+                const cId = c.id || c._id
+                const courseGrades = (grades || []).filter(g => {
+                   const gCourseId = g.courseId?._id || g.courseId;
+                   return String(gCourseId) === String(cId);
+                })
+                const activities  = (c.contents || []).filter(cnt => cnt.type === 'Actividad')
+                
+                const avg = courseGrades.length > 0 
+                  ? (courseGrades.reduce((sum, g) => sum + (g.grade || 0), 0) / courseGrades.length).toFixed(1)
+                  : '-'
+
+                return (
+                  <div key={cId} className="card slide-up">
+                    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div className="card-title">{c.name}</div>
+                        <div className="card-subtitle">{activities.length} actividades registradas</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Promedio Actual</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: avg !== '-' ? (Number(avg) >= 3 ? 'var(--success)' : 'var(--danger)') : 'var(--text-muted)' }}>
+                          {avg}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="card-body" style={{ padding: 0 }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Actividad</th>
+                            <th>Nota</th>
+                            <th>Retroalimentación</th>
+                            <th>Fecha</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activities.length === 0 ? (
+                            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No hay actividades creadas para este curso.</td></tr>
+                          ) : activities.map(act => {
+                            const g = courseGrades.find(grade => String(grade.contentId?._id || grade.contentId) === String(act._id))
+                            return (
+                              <tr key={act._id}>
+                                <td><strong>{act.title}</strong></td>
+                                <td>
+                                  {g ? (
+                                    <span className={`badge ${g.grade >= 3 ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: 13, padding: '4px 10px' }}>
+                                      {g.grade.toFixed(1)}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pendiente</span>
+                                  )}
+                                </td>
+                                <td style={{ fontSize: 12, maxWidth: 300 }}>
+                                  {g?.feedback || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                                </td>
+                                <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  {g ? new Date(g.updatedAt || g.createdAt).toLocaleDateString() : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         )}
       </div>

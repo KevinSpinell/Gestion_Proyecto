@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { Avatar } from '../../components/Sidebar'
 
@@ -221,10 +221,229 @@ function ManageContentsModal({ courseId, onClose }) {
   )
 }
 
+function ManageGradesView({ courseId, onBack }) {
+  const { courses, users, grades, saveGrade, fetchGradesByCourse } = useApp()
+  const [selectedActivityId, setSelectedActivityId] = useState('')
+  const [selectedStudentId, setSelectedStudentId] = useState('')
+  const [gradeValue, setGradeValue] = useState('')
+  const [feedback, setFeedback] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState({ text: '', type: '' })
+
+  const course = courses.find(c => (c.id === courseId || c._id === courseId))
+  const activities = (course?.contents || []).filter(cnt => cnt.type === 'Actividad')
+  const enrolledStudents = (course?.studentIds || []).map(sid => users.find(u => String(u.id || u._id) === String(sid))).filter(Boolean)
+
+  useEffect(() => {
+    fetchGradesByCourse(courseId)
+  }, [courseId])
+
+  const handleSave = async () => {
+    if (!selectedActivityId) { setMessage({ text: 'Selecciona una actividad', type: 'error' }); return }
+    if (!selectedStudentId) { setMessage({ text: 'Selecciona un estudiante', type: 'error' }); return }
+    if (gradeValue === '' || isNaN(gradeValue) || gradeValue < 0 || gradeValue > 5) {
+      setMessage({ text: 'Ingresa una nota válida (0-5)', type: 'error' });
+      return
+    }
+
+    setLoading(true)
+    const res = await saveGrade({
+      studentId: selectedStudentId,
+      courseId,
+      contentId: selectedActivityId,
+      grade: Number(gradeValue),
+      feedback,
+      teacherId: course.teacherId
+    })
+    setLoading(true) // Keep loading true for a moment for UX
+    setTimeout(() => setLoading(false), 500)
+
+    if (res.success) {
+      setMessage({ text: '✅ Calificación guardada exitosamente', type: 'success' })
+      setGradeValue('')
+      setFeedback('')
+      setTimeout(() => setMessage({ text: '', type: '' }), 3000)
+    } else {
+      setMessage({ text: `❌ ${res.error}`, type: 'error' })
+    }
+  }
+
+  const getStudentGrade = (studentId, activityId) => {
+    return grades.find(g => 
+      String(g.studentId?._id || g.studentId) === String(studentId) && 
+      String(g.contentId) === String(activityId)
+    )
+  }
+
+  if (!course) return (
+    <div className="card">
+      <div className="card-body">
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
+        <div style={{ textAlign: 'center', padding: 40 }}>⚠️ Error: Curso no encontrado</div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="card fade-in">
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <button className="btn btn-ghost btn-sm" onClick={onBack} style={{ marginBottom: 8, padding: 0, color: 'var(--primary)' }}>← Volver a cursos</button>
+          <div className="card-title">📝 Gestión de Calificaciones: {course?.name}</div>
+          <div className="card-subtitle">Registra y modifica las notas de tus estudiantes</div>
+        </div>
+      </div>
+      
+      <div className="card-body">
+        {activities.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-state-icon">🚫</span>
+            <div className="empty-state-title">No hay actividades</div>
+            <div className="empty-state-desc">Debes crear actividades en la sección de "Gestionar Materiales" antes de calificar.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 30 }}>
+            {/* Formulario de Calificación */}
+            <div style={{ background: 'var(--bg-page)', padding: 20, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+              <h4 style={{ marginBottom: 16 }}>Ingresar Calificación</h4>
+              
+              <div className="form-group">
+                <label className="form-label">ACTIVIDAD *</label>
+                <select className="form-select" value={selectedActivityId} onChange={e => setSelectedActivityId(e.target.value)}>
+                  <option value="">Seleccione actividad...</option>
+                  {activities.map(act => (
+                    <option key={act._id} value={act._id}>{act.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">ESTUDIANTE *</label>
+                <select className="form-select" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)}>
+                  <option value="">Seleccione estudiante...</option>
+                  {enrolledStudents.map(st => (
+                    <option key={st.id || st._id} value={st.id || st._id}>{st.name} ({st.documento})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">NOTA (0.0 - 5.0) *</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  step="0.1" 
+                  min="0" 
+                  max="5" 
+                  value={gradeValue}
+                  onChange={e => setGradeValue(e.target.value)}
+                  placeholder="Ej: 4.5"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">RETROALIMENTACIÓN</label>
+                <textarea 
+                  className="form-textarea" 
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                  placeholder="Opcional..."
+                  rows="3"
+                ></textarea>
+              </div>
+
+              {message.text && (
+                <div style={{ 
+                  padding: 10, 
+                  borderRadius: 6, 
+                  fontSize: 13, 
+                  marginBottom: 15,
+                  background: message.type === 'success' ? '#DEF7EC' : '#FDE8E8',
+                  color: message.type === 'success' ? '#03543F' : '#9B1C1C',
+                  border: `1px solid ${message.type === 'success' ? '#BCF0DA' : '#F8B4B4'}`
+                }}>
+                  {message.text}
+                </div>
+              )}
+
+              <button 
+                className="btn btn-primary w-full" 
+                onClick={handleSave}
+                disabled={loading}
+                style={{ height: 45, fontWeight: 600, color: 'white' }}
+              >
+                {loading ? 'Guardando...' : '💾 Guardar Calificación'}
+              </button>
+            </div>
+
+            {/* Tabla de Calificaciones Actuales */}
+            <div>
+              <h4 style={{ marginBottom: 16 }}>Cuadro de Estudiantes ({enrolledStudents.length})</h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table" style={{ fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th>Estudiante</th>
+                      {activities.map(act => (
+                        <th key={act._id} title={act.title} style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {act.title}
+                        </th>
+                      ))}
+                      <th>Promedio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrolledStudents.map(st => {
+                      let sum = 0;
+                      let count = 0;
+                      const sId = st.id || st._id;
+                      return (
+                        <tr key={sId}>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{st.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{st.documento}</div>
+                          </td>
+                          {activities.map(act => {
+                            const g = getStudentGrade(sId, act._id);
+                            if (g) {
+                              sum += g.grade;
+                              count++;
+                            }
+                            return (
+                              <td key={act._id} style={{ textAlign: 'center' }}>
+                                <span className={`badge ${g ? (g.grade >= 3 ? 'badge-success' : 'badge-danger') : 'badge-gray'}`} style={{ fontSize: 12 }}>
+                                  {g ? g.grade.toFixed(1) : '-'}
+                                </span>
+                              </td>
+                            )
+                          })}
+                          <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                            {count > 0 ? (sum / count).toFixed(1) : '-'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {enrolledStudents.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                  No hay estudiantes inscritos en este curso todavía.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function TeacherDashboard() {
   const { currentUser, activePage, classes, courses, users, getCoursesForTeacher, getClassesForCourse, activateClass, updateCourse, setActivePage, setActiveClassId, refreshData } = useApp()
   const [showCreateModal, setShowCreateModal] = useState(null)
   const [showContentsModal, setShowContentsModal] = useState(null)
+  const [selectedCourseForGrades, setSelectedCourseForGrades] = useState(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const handleRefresh = async () => {
@@ -371,6 +590,16 @@ export default function TeacherDashboard() {
                               {hasActive ? '🔴 Unirse' : (c.estado === 'Activo' ? '➕ Nueva Sala' : '🚫 Bloqueado')}
                             </button>
                           </div>
+                          <button 
+                            className="btn btn-outline" 
+                            style={{ width: '100%', height: 40, border: '1px solid var(--primary)', color: 'var(--primary)' }}
+                            onClick={() => {
+                              setSelectedCourseForGrades(c.id || c._id)
+                              setActivePage('grades')
+                            }}
+                          >
+                            📝 Calificaciones
+                          </button>
                           {c.estado === 'Pausado' && (
                             <button 
                               className="btn btn-outline" 
@@ -434,6 +663,18 @@ export default function TeacherDashboard() {
             </table>
           </div>
         </div>
+      )
+    }
+
+    if (activePage === 'grades' && selectedCourseForGrades) {
+      return (
+        <ManageGradesView 
+          courseId={selectedCourseForGrades} 
+          onBack={() => {
+            setActivePage('my-courses')
+            setSelectedCourseForGrades(null)
+          }} 
+        />
       )
     }
     return null
