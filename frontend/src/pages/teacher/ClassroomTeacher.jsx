@@ -22,6 +22,7 @@ export default function ClassroomTeacher({ classId }) {
   const [interimText, setInterimText]  = useState('')
   const recognitionRef                  = useRef(null)
   const transcriptBottomRef            = useRef(null)
+  const chatEndRef                     = useRef(null)
 
   // AI state
   const [aiMessages, setAiMessages]  = useState([])
@@ -40,13 +41,27 @@ export default function ClassroomTeacher({ classId }) {
   // Scroll transcription to bottom
   useEffect(() => {
     transcriptBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [cls?.transcription?.length])
+  }, [cls?.transcription?.length, interimText])
 
   // Timer
   useEffect(() => {
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
     return () => clearInterval(timerRef.current)
   }, [])
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [cls?.transcription?.length, interimText])
+
+  // Auto-expulsion if class is deactivated (e.g. by an admin)
+  useEffect(() => {
+    if (cls && !cls.isActive) {
+      alert('La clase ha sido finalizada. Serás redirigido al panel principal.')
+      setActiveClassId(null)
+      setActivePage('dashboard')
+    }
+  }, [cls?.isActive, setActiveClassId, setActivePage])
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
   // Web Speech API setup
@@ -133,11 +148,11 @@ export default function ClassroomTeacher({ classId }) {
     alert('✅ Transcripción guardada correctamente.')
   }
 
-  const handleEndClass = () => {
+  const handleEndClass = async () => {
     if (!window.confirm('¿Finalizar la clase? Se guardará la transcripción automáticamente.')) return
     saveTranscription(classId)
     stopRecognition()
-    deactivateClass(classId)
+    await deactivateClass(classId)
     setActiveClassId(null)
     setActivePage('dashboard')
   }
@@ -201,7 +216,7 @@ export default function ClassroomTeacher({ classId }) {
   const displayQ     = qTab === 'pending' ? pendingQ : answeredQ
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: 'calc(100vh - 20px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top header */}
       <div className="class-topbar">
         <div className="class-topbar-left">
@@ -222,7 +237,8 @@ export default function ClassroomTeacher({ classId }) {
           <button className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             ⚙️
           </button>
-          <button className="btn btn-danger" onClick={handleEndClass}>↩ Finalizar Clase</button>
+          <button className="btn btn-outline btn-sm" onClick={() => { setActiveClassId(null); setActivePage('dashboard') }}>↩ Salir</button>
+          <button className="btn btn-danger" onClick={handleEndClass}>✕ Finalizar Clase</button>
         </div>
       </div>
 
@@ -248,15 +264,30 @@ export default function ClassroomTeacher({ classId }) {
             </div>
 
             <div className="video-controls">
-              <button className={`video-ctrl-btn ${isRecording && !isPaused ? 'active' : ''}`} title="Micrófono">🎤</button>
-              <button className="video-ctrl-btn" title="Cámara">📹</button>
-              <button
-                className={`video-ctrl-btn ${isRecording && !isPaused ? 'recording' : ''}`}
-                title={isRecording ? 'Grabando' : 'Iniciar grabación'}
-                onClick={isRecording ? stopRecognition : startRecognition}
-              >
-                {isRecording && !isPaused ? '⏹' : '⏺'}
-              </button>
+              {currentUser.role !== 'admin' && (
+                <>
+                  <button
+                    className={`video-ctrl-btn ${isRecording && !isPaused ? 'active' : ''}`}
+                    title={isRecording ? 'Detener micrófono' : 'Activar micrófono'}
+                    onClick={isRecording ? stopRecognition : startRecognition}
+                  >
+                    🎤
+                  </button>
+                  <button className="video-ctrl-btn" title="Cámara">📹</button>
+                  <button
+                    className={`video-ctrl-btn ${isRecording && !isPaused ? 'recording' : ''}`}
+                    title={isRecording ? 'Grabando' : 'Iniciar grabación'}
+                    onClick={isRecording ? stopRecognition : startRecognition}
+                  >
+                    {isRecording && !isPaused ? '⏹' : '⏺'}
+                  </button>
+                </>
+              )}
+              {currentUser.role === 'admin' && (
+                <button className="video-ctrl-btn" disabled style={{ width: 'auto', padding: '0 12px', fontSize: 11 }}>
+                  ⚖️ Modo Observador
+                </button>
+              )}
               <button className="video-ctrl-btn" title="Compartir pantalla">🖥️</button>
             </div>
           </div>
@@ -414,7 +445,23 @@ export default function ClassroomTeacher({ classId }) {
             </div>
 
             <div className="chat-messages">
-              {displayQ.length === 0 ? (
+              {/* Real-time speech-to-chat simulation */}
+              {(cls.transcription || []).map((seg, idx) => (
+                <div key={`trans-${idx}`} style={{ fontSize: 13, marginBottom: 4, color: 'var(--text-main)', paddingLeft: 8, borderLeft: '2px solid var(--primary)' }}>
+                  • {seg.text}
+                </div>
+              ))}
+              {interimText && (
+                <div className="chat-message" style={{ borderLeft: '3px solid var(--danger)', background: '#fff1f2', marginBottom: 8 }}>
+                  <div className="chat-message-header">
+                    <span className="chat-message-name" style={{ color: 'var(--danger)', fontSize: 10 }}>🔴 Hablando ahora...</span>
+                  </div>
+                  <div className="chat-message-bubble" style={{ fontStyle: 'italic', fontSize: 11 }}>
+                    {interimText}...
+                  </div>
+                </div>
+              )}
+              {displayQ.length === 0 && !interimText && (cls.transcription || []).length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
                   {qTab === 'pending' ? 'Sin preguntas pendientes' : 'Sin preguntas respondidas'}
                 </div>
@@ -445,6 +492,7 @@ export default function ClassroomTeacher({ classId }) {
                   )}
                 </div>
               ))}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Quick reply preview / chat */}

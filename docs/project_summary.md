@@ -142,6 +142,11 @@ backend/src/
 | DELETE | `/api/courses/:id/contents/:contentId` | **Eliminar material** |
 | GET/POST | `/api/classes` | Listar / Crear clase |
 | PATCH | `/api/classes/:id/activate` | Activar clase en vivo |
+| POST | `/api/classes/:id/transcription` | **Añadir segmento de transcripción** |
+| PUT | `/api/classes/:id/transcription/save` | Guardar transcripción completa |
+| POST | `/api/classes/:id/questions` | **Enviar pregunta** en vivo |
+| PUT | `/api/classes/:classId/questions/:questionId/answer` | Marcar pregunta como respondida |
+| POST | `/api/classes/:id/join` | Unirse a la clase (asistencia) |
 | GET | `/api/health` | Health check |
 
 ---
@@ -229,6 +234,10 @@ frontend/src/
 9. **Archivos**: límite de 50MB, solo se permiten extensiones documentales (.pdf, .docx, .pptx). No se admiten archivos de video (.mp4).
 10. **Visibilidad de Interfaz**: Todos los botones de acción crítica (Aprobar, Inscribir) deben usar `color: white` para asegurar contraste sobre fondos de éxito/primarios.
 11. **Sincronización de Dashboard**: Los Dashboards que usan pestañas internas deben sincronizar su estado con `activePage` del contexto global para mantener el Sidebar coherente.
+12. **Control Temporal Estricto**: Nadie (ni profesores ni alumnos) puede entrar a una clase antes de su `startTime`. Los botones de "Entrar" se habilitan dinámicamente.
+13. **Validación de Creación**: La hora de inicio no puede ser anterior a la actual, la de fin debe ser posterior a la de inicio, y la duración máxima permitida es de 4 horas.
+14. **Expulsión Universal**: Al finalizar una sesión, todos los participantes conectados son redirigidos automáticamente al panel principal.
+15. **Transcripción Acumulativa**: Se mantiene un historial persistente de lo dicho por el profesor en el chat, con auto-scroll automático para todos los usuarios.
 
 ---
 
@@ -239,3 +248,4 @@ frontend/src/
 - Para migrar un stub a API real: reemplazar la función en `AppContext.jsx` con un `fetch` al backend.
 - El seed data en `AppContext` es solo para desarrollo local sin DB; cuando el backend está activo, los datos vienen de MongoDB.
 - CSS: todas las clases están en `index.css`. Usar clases existentes (`btn`, `card`, `form-input`, `badge-*`, etc.) antes de crear nuevas.
+- **Sincronización en Vivo**: El sistema usa "polling" cada 4-10 segundos en los Dashboards y Sidebar para actualizar el estado de las clases y habilitar el acceso dinámicamente sin recargar la página.

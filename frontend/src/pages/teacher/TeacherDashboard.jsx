@@ -15,17 +15,65 @@ const THUMB = {
 
 function CreateClassModal({ courseId, onClose }) {
   const { createClass, activateClass, setActivePage, setActiveClassId } = useApp()
-  const [form, setForm] = useState({ title: '', date: new Date().toISOString().split('T')[0], startTime: '', sessionType: 'Live' })
+  const [form, setForm] = useState({ 
+    title: '', 
+    description: '', 
+    date: new Date().toISOString().split('T')[0], 
+    startTime: '', 
+    endTime: '', 
+    sessionType: 'Live' 
+  })
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleCreate = () => {
-    if (!form.title) { setError('El título es requerido'); return }
-    const result = createClass({ ...form, courseId })
+  const handleCreate = async () => {
+    if (!form.title || !form.date || !form.startTime || !form.endTime) { 
+      setError('Todos los campos marcados con (*) son obligatorios'); 
+      return 
+    }
+    
+    // Time validation (quick FE check)
+    const now = new Date()
+    const [sy, sm, sd] = form.date.split('-').map(Number)
+    const [sh, smin] = form.startTime.split(':').map(Number)
+    const startDate = new Date(sy, sm - 1, sd, sh, smin)
+
+    if (startDate.getTime() < now.getTime()) {
+      setError('La fecha y hora de inicio no pueden ser anteriores a la actual');
+      return;
+    }
+
+    const [eh, emin] = form.endTime.split(':').map(Number)
+    const t1 = sh * 60 + smin
+    const t2 = eh * 60 + emin
+
+    if (t2 <= t1) {
+      setError('La hora de fin debe ser posterior a la hora de inicio');
+      return;
+    }
+
+    if (t2 - t1 > 240) {
+      setError('La duración de la clase no puede exceder las 4 horas');
+      return;
+    }
+
+    setLoading(true)
+    setError('')
+    const result = await createClass({ ...form, courseId })
+    setLoading(false)
+
     if (result && result.success) {
-      activateClass(result.class.id)
-      setActiveClassId(result.class.id)
-      setActivePage('classroom')
+      // Logic for initiating class: only enter if it's already time
+      const currentTime = new Date()
+      if (startDate <= currentTime) {
+        setActiveClassId(result.class.id)
+        setActivePage('classroom')
+      } else {
+        alert('Clase programada correctamente. Podrás iniciarla desde el panel cuando llegue la hora.')
+      }
       onClose()
+    } else {
+      setError(result.error || 'Error al crear la clase')
     }
   }
 
@@ -38,17 +86,25 @@ function CreateClassModal({ courseId, onClose }) {
         </div>
         <div className="modal-body">
           <div className="form-group">
-            <label className="form-label">TÍTULO DE LA CLASE</label>
-            <input className="form-input" placeholder="Ej: Relatividad Especial — Workshop" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} autoFocus />
+            <label className="form-label">TÍTULO DE LA CLASE *</label>
+            <input className="form-input" placeholder="Ej: Relatividad Especial — Workshop" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} autoFocus maxLength="100" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">DESCRIPCIÓN (OPCIONAL)</label>
+            <textarea className="form-textarea" placeholder="Describe brevemente el tema de la clase..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} maxLength="500" rows="2" />
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">FECHA</label>
+              <label className="form-label">FECHA *</label>
               <input className="form-input" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">HORA DE INICIO</label>
+              <label className="form-label">HORA INICIO *</label>
               <input className="form-input" type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">HORA FIN *</label>
+              <input className="form-input" type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} />
             </div>
           </div>
           <div className="form-group">
@@ -76,7 +132,9 @@ function CreateClassModal({ courseId, onClose }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={handleCreate}>🚀 Iniciar Clase</button>
+          <button className="btn btn-primary" onClick={handleCreate} disabled={loading}>
+            {loading ? 'Creando...' : '🚀 Iniciar Clase'}
+          </button>
         </div>
       </div>
     </div>
@@ -445,6 +503,12 @@ export default function TeacherDashboard() {
   const [showContentsModal, setShowContentsModal] = useState(null)
   const [selectedCourseForGrades, setSelectedCourseForGrades] = useState(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -458,6 +522,16 @@ export default function TeacherDashboard() {
   const pastClasses   = myClasses.filter(cl => !cl.isActive && cl.savedTranscription)
 
   const enterClass = (classId) => {
+    const cls = classes.find(cl => String(cl.id || cl._id) === String(classId))
+    if (cls && cls.startTime) {
+      const [h, m] = cls.startTime.split(':')
+      const start = new Date(currentTime)
+      start.setHours(parseInt(h), parseInt(m), 0, 0)
+      if (currentTime < start) {
+        alert(`La clase aún no ha comenzado. Por favor, espera hasta las ${cls.startTime} para iniciarla.`)
+        return
+      }
+    }
     setActiveClassId(classId)
     setActivePage('classroom')
   }

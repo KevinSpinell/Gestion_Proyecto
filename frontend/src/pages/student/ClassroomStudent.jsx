@@ -26,7 +26,14 @@ export default function ClassroomStudent({ classId }) {
   const [showAI, setShowAI]         = useState(false)
   const [aiMessages, setAiMessages] = useState([])
   const [aiInput, setAiInput]       = useState('')
+  const [isAIActive, setIsAIActive] = useState(false)
   const [aiLoading, setAiLoading]   = useState(false)
+  const chatEndRef = useRef(null)
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [cls?.transcription?.length, setActivePage]) // Assuming activePage is a dependency for chat auto-scroll, though it's not directly used in the scroll logic. If it's meant to trigger scroll on page change, it's fine.
   const [elapsed, setElapsed]       = useState(0)
 
   const transcriptBottomRef = useRef(null)
@@ -39,6 +46,15 @@ export default function ClassroomStudent({ classId }) {
   useEffect(() => {
     transcriptBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [cls?.transcription?.length])
+
+  // EF-10 Adjustment: Auto-expel if teacher ends class
+  useEffect(() => {
+    if (cls && !cls.isActive) {
+      alert('La clase ha sido finalizada por el profesor.')
+      setActiveClassId(null)
+      setActivePage('dashboard')
+    }
+  }, [cls?.isActive, setActiveClassId, setActivePage])
 
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
@@ -90,7 +106,7 @@ export default function ClassroomStudent({ classId }) {
   const myMessages   = (cls.questions || []).filter(q => q.userId === currentUser.id)
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: 'calc(100vh - 20px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top bar */}
       <div className="class-topbar">
         <div className="class-topbar-left">
@@ -255,7 +271,13 @@ export default function ClassroomStudent({ classId }) {
 
             {/* Message history */}
             <div className="chat-messages">
-              {(cls.questions || []).length === 0 ? (
+              {/* Professor Transcription History Simulation */}
+              {(cls.transcription || []).map((seg, idx) => (
+                <div key={`trans-${idx}`} style={{ fontSize: 13, marginBottom: 4, color: 'var(--text-main)', paddingLeft: 8, borderLeft: '2px solid var(--primary)' }}>
+                  • {seg.text}
+                </div>
+              ))}
+              {(cls.questions || []).length === 0 && (cls.transcription || []).length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '8px 0' }}>
                   Usa los botones rápidos o escribe un mensaje
                 </div>
@@ -271,6 +293,7 @@ export default function ClassroomStudent({ classId }) {
                   </div>
                 </div>
               ))}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Custom message */}

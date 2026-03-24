@@ -18,7 +18,7 @@ function Modal({ title, onClose, children, footer }) {
 }
 
 export default function CoursesPage() {
-  const { users, courses, classes, createCourse, updateCourse, deleteCourse, enrollStudent, unenrollStudent, refreshData } = useApp()
+  const { users, courses, classes, createCourse, updateCourse, deleteCourse, enrollStudent, unenrollStudent, createClass, refreshData } = useApp()
   const [modal, setModal]     = useState(null)
   const [selected, setSelected] = useState(null)
   const [search, setSearch]   = useState('')
@@ -132,10 +132,12 @@ export default function CoursesPage() {
                 </div>
               </div>
 
-              {/* Right: students */}
+              {/* Right: students and classes */}
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Estudiantes inscritos ({enrolled.length})</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>Estudiantes inscritos ({enrolled.length})</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto', marginBottom: 20 }}>
                   {enrolled.map(s => (
                     <div key={s.id || s._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-page)' }}>
                       <Avatar user={s} size="sm" />
@@ -146,20 +148,21 @@ export default function CoursesPage() {
                   {enrolled.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sin estudiantes aún</div>}
                 </div>
 
-                {notEnrolled.length > 0 && (
-                  <>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginTop: 14, marginBottom: 8 }}>Agregar estudiante</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {notEnrolled.map(s => (
-                        <div key={s.id || s._id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Avatar user={s} size="sm" />
-                          <span style={{ fontSize: 12, flex: 1 }}>{s.name}</span>
-                          <button className="btn btn-sm btn-success" onClick={() => enrollStudent(course.id || course._id, s.id || s._id)}>+ Inscribir</button>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>Clases del curso ({courseClasses.length})</div>
+                    <button className="btn btn-xs btn-primary" onClick={() => setModal('create-class')}>+ Nueva Clase</button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                    {courseClasses.map(cl => (
+                      <div key={cl.id || cl._id} style={{ padding: '8px 10px', background: 'var(--bg-page)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
+                        <div style={{ fontWeight: 600 }}>{cl.title}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{cl.date} • {cl.startTime} - {cl.endTime || '??:??'}</div>
+                      </div>
+                    ))}
+                    {courseClasses.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No hay clases programadas</div>}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -357,6 +360,67 @@ export default function CoursesPage() {
       )}
 
       {modal === 'detail' && <DetailModal />}
+
+      {modal === 'create-class' && selected && (
+        <Modal title={`Nueva Clase - ${selected.name}`} onClose={() => setModal('detail')}
+          footer={
+            <>
+              <button className="btn btn-secondary" onClick={() => setModal('detail')}>Volver</button>
+              <button className="btn btn-primary" onClick={async () => {
+                const classData = {
+                  courseId: selected.id || selected._id,
+                  title: document.getElementById('cl-title').value,
+                  description: document.getElementById('cl-desc').value,
+                  date: document.getElementById('cl-date').value,
+                  startTime: document.getElementById('cl-start').value,
+                  endTime: document.getElementById('cl-end').value,
+                  sessionType: document.getElementById('cl-type').value
+                };
+                if (!classData.title || !classData.date || !classData.startTime || !classData.endTime) {
+                  alert('Todos los campos marcados con (*) son obligatorios');
+                  return;
+                }
+                const res = await createClass(classData);
+                if (res.success) {
+                  setModal('detail');
+                } else {
+                  alert(res.error);
+                }
+              }}>Crear Clase</button>
+            </>
+          }>
+          <div className="form-group">
+            <label className="form-label">TÍTULO DE LA CLASE *</label>
+            <input id="cl-title" className="form-input" placeholder="Ej: Introducción a SQL" maxLength="100" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">DESCRIPCIÓN</label>
+            <textarea id="cl-desc" className="form-textarea" placeholder="Descripción opcional..." maxLength="500" rows="2" />
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">FECHA *</label>
+              <input id="cl-date" className="form-input" type="date" defaultValue={new Date().toISOString().split('T')[0]} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">INICIO *</label>
+              <input id="cl-start" className="form-input" type="time" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">FIN *</label>
+              <input id="cl-end" className="form-input" type="time" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">TIPO DE SESIÓN</label>
+            <select id="cl-type" className="form-select">
+              <option value="Live">📡 Live</option>
+              <option value="In-Person">🏫 Presencial</option>
+              <option value="Workshop">🔧 Workshop</option>
+            </select>
+          </div>
+        </Modal>
+      )}
     </>
   )
 }

@@ -15,7 +15,7 @@ export function Avatar({ user, size = 'md', style = {} }) {
 }
 
 export default function Sidebar() {
-  const { currentUser, logout, activePage, setActivePage, getActiveClasses, courses } = useApp()
+  const { currentUser, logout, activePage, setActivePage, activeClassId, setActiveClassId, getActiveClasses, courses } = useApp()
   const [regPendingCount, setRegPendingCount] = useState(0)
 
   // Fetch pending account registration count for the admin badge
@@ -27,7 +27,15 @@ export default function Sidebar() {
       .catch(() => {})
   }, [currentUser?.role, activePage])
 
-  const activeClasses = getActiveClasses()
+  const activeClasses = getActiveClasses().filter(cl => {
+    if (currentUser?.role === 'admin') return true
+    const clCourseId = String(cl.courseId?._id || cl.courseId)
+    const course = courses.find(c => String(c.id || c._id) === clCourseId)
+    if (!course) return false
+    if (currentUser?.role === 'teacher') return String(course.teacherId?._id || course.teacherId) === String(currentUser.id)
+    if (currentUser?.role === 'student') return (course.studentIds || []).map(String).includes(String(currentUser.id))
+    return false
+  })
 
   // Calculate total pending: Registration requests + Course enrollment requests
   const courseRequestsCount = courses.reduce((acc, c) => acc + (c.pendingStudentIds?.length || 0), 0)
@@ -84,18 +92,50 @@ export default function Sidebar() {
           </div>
         ))}
 
+        {activeClassId && activeClasses.some(cl => String(cl.id || cl._id) === String(activeClassId)) && (
+          <>
+            <div className="sidebar-section-label">Sesión Actual</div>
+            <div
+              className={`sidebar-item ${activePage === 'classroom' ? 'active' : ''}`}
+              onClick={() => setActivePage('classroom')}
+              style={{ color: 'var(--danger)', fontWeight: 600 }}
+            >
+              <span className="item-icon">🔴</span>
+              En clase ahora
+              <span className="badge badge-live" style={{ fontSize: 9, marginLeft: 'auto' }}>VOLVER</span>
+            </div>
+          </>
+        )}
+
         {activeClasses.length > 0 && (
           <>
-            <div className="sidebar-section-label">Clases activas</div>
-            {activeClasses.map(cl => (
-              <div key={cl.id} className="sidebar-item" style={{ fontSize: 12 }}>
-                <span className="item-icon">🔴</span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {cl.title}
-                </span>
-                <span className="badge badge-live" style={{ fontSize: 9 }}>EN VIVO</span>
-              </div>
-            ))}
+            <div className="sidebar-section-label">Clases activas en el sistema</div>
+            {activeClasses.map(cl => {
+              const classId = cl.id || cl._id
+              const isMine = String(classId) === String(activeClassId)
+              if (isMine && activePage === 'classroom') return null
+              return (
+                <div key={classId} className="sidebar-item" style={{ fontSize: 11 }} onClick={() => { 
+                  if (cl.startTime) {
+                    const [h, m] = cl.startTime.split(':')
+                    const start = new Date(currentTime)
+                    start.setHours(parseInt(h), parseInt(m), 0, 0)
+                    if (currentTime < start) {
+                      alert(`La clase "${cl.title}" aún no ha comenzado. Programada para las ${cl.startTime}`)
+                      return
+                    }
+                  }
+                  setActiveClassId(classId)
+                  setActivePage('classroom') 
+                }}>
+                  <span className="item-icon">●</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {cl.title}
+                  </span>
+                  {isMine && <span className="badge badge-primary" style={{ fontSize: 8 }}>TÚ</span>}
+                </div>
+              )
+            })}
           </>
         )}
       </nav>

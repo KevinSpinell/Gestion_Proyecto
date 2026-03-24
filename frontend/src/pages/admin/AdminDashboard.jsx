@@ -1,8 +1,15 @@
+import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { Avatar } from '../../components/Sidebar'
 
 export default function AdminDashboard() {
-  const { users, courses, classes, getActiveClasses } = useApp()
+  const { users, courses, classes, getActiveClasses, setActivePage, setActiveClassId, deactivateClass } = useApp()
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   const teachers  = users.filter(u => u.role === 'teacher')
   const students  = users.filter(u => u.role === 'student')
@@ -69,16 +76,19 @@ export default function AdminDashboard() {
                     <th>Profesor</th>
                     <th>Estado</th>
                     <th>Asistentes</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {classes.length === 0 ? (
-                    <tr><td colSpan={5}><div className="empty-state"><span className="empty-state-icon">📭</span><div className="empty-state-title">Sin clases aún</div></div></td></tr>
+                    <tr><td colSpan={6}><div className="empty-state"><span className="empty-state-icon">📭</span><div className="empty-state-title">Sin clases aún</div></div></td></tr>
                   ) : classes.slice().reverse().map(cl => {
-                    const course = courses.find(c => c.id === cl.courseId)
-                    const teacher = users.find(u => u.id === course?.teacherId)
+                    const clCourseId = String(cl.courseId?._id || cl.courseId)
+                    const course = courses.find(c => String(c.id || c._id) === clCourseId)
+                    const teacher = users.find(u => String(u.id || u._id) === String(course?.teacherId?._id || course?.teacherId))
+                    const classId = cl.id || cl._id
                     return (
-                      <tr key={cl.id}>
+                      <tr key={classId}>
                         <td><div style={{ fontWeight: 600 }}>{cl.title}</div><div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{cl.date}</div></td>
                         <td style={{ fontSize: 12 }}>{course?.name || '—'}</td>
                         <td>
@@ -94,7 +104,32 @@ export default function AdminDashboard() {
                             {cl.isActive ? '🔴 En Vivo' : 'Finalizada'}
                           </span>
                         </td>
-                        <td><span className="badge badge-primary">{cl.attendance.length}</span></td>
+                        <td><span className="badge badge-primary">{(cl.participantIds || []).length} / {(cl.attendance || []).length}</span></td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {cl.isActive && (
+                              <>
+                                <button className="btn btn-xs btn-outline" onClick={() => {
+                                  const [h, m] = (cl.startTime || '00:00').split(':')
+                                  const start = new Date(currentTime)
+                                  start.setHours(parseInt(h), parseInt(m), 0, 0)
+                                  if (currentTime < start) {
+                                    alert(`La clase inicia a las ${cl.startTime}. No puedes entrar todavía.`)
+                                    return
+                                  }
+                                  setActiveClassId(classId); 
+                                  setActivePage('classroom') 
+                                }}>Entrar</button>
+                                <button className="btn btn-xs btn-danger" onClick={async () => {
+                                  if (confirm('¿Finalizar esta clase forzosamente?')) await deactivateClass(classId)
+                                }}>Finalizar</button>
+                              </>
+                            )}
+                            {!cl.isActive && cl.savedTranscription && (
+                              <button className="btn btn-xs btn-ghost" onClick={() => { setActiveClassId(classId); setActivePage('history') }}>Ver</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
