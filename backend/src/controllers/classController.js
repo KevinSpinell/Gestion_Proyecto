@@ -1,0 +1,195 @@
+const Class = require('../models/Class');
+
+// @desc  Get all classes
+// @route GET /api/classes
+exports.getAll = async (req, res) => {
+  try {
+    const classes = await Class.find().populate('courseId', 'name');
+    res.json(classes);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Get single class
+// @route GET /api/classes/:id
+exports.getById = async (req, res) => {
+  try {
+    const cls = await Class.findById(req.params.id).populate('courseId');
+    if (!cls) return res.status(404).json({ message: 'Class not found' });
+    res.json(cls);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Get classes by course
+// @route GET /api/classes/course/:courseId
+exports.getByCourse = async (req, res) => {
+  try {
+    const classes = await Class.find({ courseId: req.params.courseId });
+    res.json(classes);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Get active classes
+// @route GET /api/classes/active
+exports.getActive = async (req, res) => {
+  try {
+    const classes = await Class.find({ isActive: true }).populate('courseId', 'name');
+    res.json(classes);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// @desc  Create class
+// @route POST /api/classes
+exports.create = async (req, res) => {
+  try {
+    const cls = await Class.create(req.body);
+    res.status(201).json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Activate class
+// @route PUT /api/classes/:id/activate
+exports.activate = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(req.params.id, { isActive: true }, { new: true });
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Deactivate class
+// @route PUT /api/classes/:id/deactivate
+exports.deactivate = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false, participantIds: [] },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Add transcription segment
+// @route POST /api/classes/:id/transcription
+exports.addTranscription = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { $push: { transcription: req.body } },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Save full transcription
+// @route PUT /api/classes/:id/transcription/save
+exports.saveTranscription = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { savedTranscription: req.body.text },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Set summary
+// @route PUT /api/classes/:id/summary
+exports.setSummary = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { summary: req.body.summary },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Add question
+// @route POST /api/classes/:id/questions
+exports.addQuestion = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { $push: { questions: req.body } },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Mark question as answered
+// @route PUT /api/classes/:classId/questions/:questionId/answer
+exports.answerQuestion = async (req, res) => {
+  try {
+    const cls = await Class.findByIdAndUpdate(
+      req.params.classId,
+      {
+        $set: {
+          'questions.$[q].status':     'answered',
+          'questions.$[q].answeredAt': new Date(),
+        },
+      },
+      { arrayFilters: [{ 'q._id': req.params.questionId }], new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Join class
+// @route POST /api/classes/:id/join
+exports.joinClass = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { $addToSet: { participantIds: userId, attendance: { userId, joinedAt: new Date() } } },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// @desc  Leave class
+// @route POST /api/classes/:id/leave
+exports.leaveClass = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const cls = await Class.findByIdAndUpdate(
+      req.params.id,
+      { $pull: { participantIds: userId } },
+      { new: true }
+    );
+    res.json(cls);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
