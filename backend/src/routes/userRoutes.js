@@ -31,6 +31,8 @@ router.get('/all', async (_req, res) => {
         return {
           id:          t._id.toString(),
           name:        fullName,
+          nombre:      t.nombre,
+          apellido:    t.apellido,
           email:       t.correo,
           username:    t.documento,
           role:        'teacher',
@@ -50,6 +52,8 @@ router.get('/all', async (_req, res) => {
         return {
           id:             s._id.toString(),
           name:           fullName,
+          nombre:         s.nombre,
+          apellido:       s.apellido,
           email:          s.correo,
           username:       s.documento,
           role:           'student',

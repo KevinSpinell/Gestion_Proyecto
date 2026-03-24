@@ -109,6 +109,7 @@ export function AppProvider({ children }) {
   })
   const [activePage, setActivePage] = useState('dashboard')
   const [activeClassId, setActiveClassId] = useState(null)
+  const [grades, setGrades] = useState([])
 
   // Persist local-only state (users/classes still in localStorage for now)
   useEffect(() => { localStorage.setItem('classai_users', JSON.stringify(users)) }, [users])
@@ -328,19 +329,34 @@ export function AppProvider({ children }) {
     }
   }
 
-  // DB STUB: replace with → PUT /api/users/:id
-  const updateUser = (id, data) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u))
+  const updateUser = async (role, id, data) => {
+    try {
+      const endpoint = role === 'teacher' ? `http://localhost:3001/api/teachers/${id}` : `http://localhost:3001/api/students/${id}`;
+      const res = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || json.error || 'Error al actualizar' };
+      await refreshData();
+      return { success: true, user: json };
+    } catch (err) {
+      return { success: false, error: 'Error de red al actualizar usuario' };
+    }
   }
 
-  // DB STUB: replace with → DELETE /api/users/:id
-  const deleteUser = (id) => {
-    setUsers(prev => prev.filter(u => u.id !== id))
-    setCourses(prev => prev.map(c => ({
-      ...c,
-      teacherId: c.teacherId === id ? null : c.teacherId,
-      studentIds: c.studentIds.filter(sid => sid !== id),
-    })))
+  const deleteUser = async (role, id) => {
+    try {
+      const endpoint = role === 'teacher' ? `http://localhost:3001/api/teachers/${id}` : `http://localhost:3001/api/students/${id}`;
+      const res = await fetch(endpoint, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || json.error || 'Error al eliminar' };
+      await refreshData();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: 'Error de red al eliminar usuario' };
+    }
   }
 
   // ── COURSES ────────────────────────────────
@@ -708,6 +724,72 @@ export function AppProvider({ children }) {
     }
   }
 
+  // RF-09: Grades
+  const saveGrade = async (gradeData) => {
+    try {
+      const res = await fetch('http://localhost:3001/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gradeData),
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || 'Error al guardar calificación' };
+
+      // Update local grades state
+      setGrades(prev => {
+        const index = prev.findIndex(g => 
+          String(g.studentId?._id || g.studentId) === String(gradeData.studentId) && 
+          String(g.courseId?._id || g.courseId) === String(gradeData.courseId) && 
+          String(g.contentId?._id || g.contentId) === String(gradeData.contentId)
+        );
+        if (index >= 0) {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], ...json };
+          return updated;
+        }
+        return [...prev, json];
+      });
+      return { success: true, grade: json };
+    } catch (err) {
+      return { success: false, error: 'Error de red al guardar calificación' };
+    }
+  }
+
+  const fetchGradesByCourse = async (courseId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/grades/course/${courseId}`);
+      const json = await res.json();
+      if (res.ok) {
+        setGrades(prev => {
+          // Merge or replace grades for this course
+          const otherGrades = prev.filter(g => String(g.courseId?._id || g.courseId) !== String(courseId));
+          return Array.isArray(json) ? [...otherGrades, ...json] : otherGrades;
+        });
+        return { success: true, grades: json };
+      }
+      return { success: false, error: json.message || 'Error al obtener calificaciones' };
+    } catch (err) {
+      return { success: false, error: 'Error de red al obtener calificaciones' };
+    }
+  }
+
+  const fetchGradesByStudent = async (studentId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/grades/student/${studentId}`);
+      const json = await res.json();
+      if (res.ok) {
+        setGrades(prev => {
+          const otherGrades = prev.filter(g => String(g.studentId?._id || g.studentId) !== String(studentId));
+          return Array.isArray(json) ? [...otherGrades, ...json] : otherGrades;
+        });
+        return { success: true, grades: json };
+      }
+      return { success: false, error: json.message || 'Error al obtener calificaciones' };
+    } catch (err) {
+      return { success: false, error: 'Error de red al obtener calificaciones' };
+    }
+  }
+
   // ── HELPERS ────────────────────────────────
   const getUserById      = (id) => users.find(u => String(u.id || u._id) === String(id))
   const getCourseById    = (id) => courses.find(c => String(c.id || c._id) === String(id))
@@ -733,6 +815,8 @@ export function AppProvider({ children }) {
     createClass, activateClass, deactivateClass, joinClass, leaveClass,
     appendTranscription, clearTranscription, saveTranscription, setSummary,
     sendQuestion, answerQuestion,
+    // Grades
+    grades, saveGrade, fetchGradesByCourse, fetchGradesByStudent,
     // Helpers
     getUserById, getCourseById, getClassById, getClassesForCourse,
     getCoursesForTeacher, getCoursesForStudent, getActiveClasses,

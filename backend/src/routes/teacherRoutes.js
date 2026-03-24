@@ -83,13 +83,19 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const updates = { ...req.body };
-    if (updates.clave) {
+    if (updates.clave && updates.clave.trim() !== '') {
       updates.clave = await bcrypt.hash(updates.clave, 10);
+    } else {
+      delete updates.clave;
     }
     const teacher = await Teacher.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true }).select('-clave');
     if (!teacher) return res.status(404).json({ message: 'Profesor no encontrado' });
     res.json(teacher);
   } catch (err) {
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ message: messages.join('. ') });
+    }
     res.status(400).json({ message: err.message });
   }
 });

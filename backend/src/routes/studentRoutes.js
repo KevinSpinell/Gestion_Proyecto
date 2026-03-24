@@ -96,6 +96,35 @@ router.put('/:id/approve', async (req, res) => {
   }
 });
 
+// ── PUT /api/students/:id — admin updates student details ─────────────────────
+router.put('/:id', async (req, res) => {
+  try {
+    const updates = { ...req.body };
+    
+    // If password is being changed, hash it
+    if (updates.clave && updates.clave.trim() !== '') {
+      updates.clave = await bcrypt.hash(updates.clave, 10);
+    } else {
+      delete updates.clave; // Don't overwrite with empty string
+    }
+
+    const student = await Student.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { new: true, runValidators: true }
+    ).select('-clave');
+
+    if (!student) return res.status(404).json({ message: 'Estudiante no encontrado' });
+    res.json(student);
+  } catch (err) {
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ message: messages.join('. ') });
+    }
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ── DELETE /api/students/:id — reject / remove student ────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
