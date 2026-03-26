@@ -127,7 +127,8 @@ export function AppProvider({ children }) {
           id: c._id, 
           teacherId: c.teacherId?._id || c.teacherId, // Normalize if populated
           studentIds: (c.studentIds || []).map(id => id._id || id),
-          pendingStudentIds: (c.pendingStudentIds || []).map(id => id._id || id)
+          pendingStudentIds: (c.pendingStudentIds || []).map(id => id._id || id),
+          maxStudents: c.maxStudents || 20
         })))
         localStorage.removeItem('classai_courses')
       }
@@ -176,6 +177,17 @@ export function AppProvider({ children }) {
       }
 
       setUsers(allUsers)
+
+      // 3. Fetch Classes
+      const resClasses = await fetch('http://localhost:3001/api/classes')
+      if (resClasses.ok) {
+        const dataClasses = await resClasses.json()
+        setClasses(dataClasses.map(cl => ({
+          ...cl,
+          id: cl._id,
+          courseId: cl.courseId?._id || cl.courseId
+        })))
+      }
 
     } catch (err) {
       console.error('Error fetching data:', err)
@@ -372,6 +384,7 @@ export function AppProvider({ children }) {
           teacherId: data.teacherId || null,
           estado: data.estado || 'Activo',
           tipoInscripcion: data.tipoInscripcion || 'Abierto',
+          maxStudents: data.maxStudents || 20,
         })
       });
       const json = await res.json();
@@ -545,27 +558,32 @@ export function AppProvider({ children }) {
   }
 
   // ── CLASSES ────────────────────────────────
-  // DB STUB: replace with → POST /api/classes
-  const createClass = (data) => {
-    const newClass = {
-      id: `cl${Date.now()}`,
-      courseId: data.courseId,
-      title: data.title,
-      date: data.date || new Date().toISOString().split('T')[0],
-      startTime: data.startTime || '00:00',
-      sessionType: data.sessionType || 'Live',
-      isActive: false,
-      transcription: [],
-      participantIds: [],
-      questions: [],
-      chatMessages: [],
-      attendance: [],
-      savedTranscription: null,
-      summary: null,
-      createdAt: new Date().toISOString().split('T')[0],
+  // RF-10: Create Class
+  const createClass = async (data) => {
+    try {
+      const res = await fetch('http://localhost:3001/api/classes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseId: data.courseId,
+          title: data.title,
+          description: data.description,
+          date: data.date,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          sessionType: data.sessionType || 'Live',
+          isActive: true
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.message || 'Error al crear la clase' };
+
+      const newClass = { ...json, id: json._id };
+      setClasses(prev => [...prev, newClass]);
+      return { success: true, class: newClass };
+    } catch (err) {
+      return { success: false, error: 'Error de red al crear la clase' };
     }
-    setClasses(prev => [...prev, newClass])
-    return { success: true, class: newClass }
   }
 
   // DB STUB: replace with → PUT /api/classes/:id/activate
@@ -575,11 +593,36 @@ export function AppProvider({ children }) {
     ))
   }
 
-  const deactivateClass = (classId) => {
-    setClasses(prev => prev.map(cl =>
-      cl.id === classId ? { ...cl, isActive: false, participantIds: [] } : cl
-    ))
+  // RF-10 Adjustment: Finalize Class
+  const deactivateClass = async (classId) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/classes/${classId}/deactivate`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setClasses(prev => prev.map(cl =>
+          (cl.id === classId || cl._id === classId) ? { ...json, id: json._id } : cl
+        ));
+        return { success: true };
+      }
+      return { success: false, error: 'Error al desactivar la clase' };
+    } catch (err) {
+      return { success: false, error: 'Error de red' };
+    }
   }
+
+  // Periodic refresh for real-time simulation (polling)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only refresh classes if there's an active class or we are in a dashboard
+      if (activeClassId || activePage === 'dashboard' || activePage === 'my-courses') {
+        refreshData();
+      }
+    }, 4000); // 4 seconds polling
+    return () => clearInterval(interval);
+  }, [activeClassId, activePage, refreshData]);
 
   // DB STUB: replace with → POST /api/classes/:id/join
   const joinClass = (classId, userId) => {
@@ -607,16 +650,20 @@ export function AppProvider({ children }) {
   }
 
   // DB STUB: replace with → POST /api/classes/:id/transcription
-  const appendTranscription = useCallback((classId, segment) => {
-    setClasses(prev => {
-      const updated = prev.map(cl =>
-        cl.id === classId
-          ? { ...cl, transcription: [...cl.transcription, { ...segment, id: Date.now() }] }
-          : cl
-      )
-      localStorage.setItem('classai_classes', JSON.stringify(updated))
-      return updated
-    })
+  const appendTranscription = useCallback(async (classId, segment) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/classes/${classId}/transcription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(segment)
+      })
+      if (res.ok) {
+        const updatedCls = await res.json()
+        setClasses(prev => prev.map(cl => String(cl.id || cl._id) === String(classId) ? { ...cl, transcription: updatedCls.transcription } : cl))
+      }
+    } catch (err) {
+      console.error('Error appending transcription:', err)
+    }
   }, [])
 
   const pauseTranscription = useCallback((classId) => {

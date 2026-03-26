@@ -93,6 +93,12 @@ export default function StudentDashboard() {
   const [confirmCourse, setConfirmCourse] = useState(null)  // course object pending confirm
   const [enrollLoading, setEnrollLoading] = useState(false)
   const [unenrollLoading, setUnenrollLoading] = useState(null) // courseId being unenrolled
+  const [currentTime, setCurrentTime]         = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Sync internal tab with global activePage
   useEffect(() => {
@@ -119,11 +125,22 @@ export default function StudentDashboard() {
 
   // Active classes I'm enrolled in
   const myActiveClasses = activeClasses.filter(cl => {
-    const course = courses.find(c => (c.id || c._id) === cl.courseId)
+    const clCourseId = String(cl.courseId?._id || cl.courseId)
+    const course = courses.find(c => String(c.id || c._id) === clCourseId)
     return course && (course.studentIds || []).map(String).includes(String(studentId))
   }) || []
 
   const enterClass = (classId) => {
+    const cls = classes.find(cl => String(cl.id || cl._id) === String(classId))
+    if (cls && cls.startTime) {
+      const [h, m] = cls.startTime.split(':')
+      const start = new Date(currentTime)
+      start.setHours(parseInt(h), parseInt(m), 0, 0)
+      if (currentTime < start) {
+        alert(`La clase aún no ha comenzado. Por favor, espera hasta las ${cls.startTime}.`)
+        return
+      }
+    }
     joinClass(classId, studentId)
     setActiveClassId(classId)
     setActivePage('classroom')
@@ -246,8 +263,9 @@ export default function StudentDashboard() {
             </div>
             <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {myActiveClasses.map(cl => {
-                const course  = courses.find(c => (c.id || c._id) === cl.courseId)
-                const teacher = users.find(u => (u.id || u._id) === course?.teacherId)
+                const clCourseId = String(cl.courseId?._id || cl.courseId)
+                const course  = courses.find(c => String(c.id || c._id) === clCourseId)
+                const teacher = users.find(u => String(u.id || u._id) === String(course?.teacherId?._id || course?.teacherId))
                 return (
                   <div key={cl.id || cl._id} className="lobby-card">
                     <div className="lobby-icon" style={{ background: '#FEF2F2' }}>🔴</div>
@@ -297,8 +315,8 @@ export default function StudentDashboard() {
             <div className="course-grid">
               {myCourses.map(c => {
                 const cId          = c.id || c._id
-                const teacher      = users.find(u => (u.id || u._id) === c.teacherId)
-                const courseClasses = classes.filter(cl => (cl.courseId?._id || cl.courseId) === cId)
+                const teacher      = users.find(u => String(u.id || u._id) === String(c.teacherId?._id || c.teacherId))
+                const courseClasses = classes.filter(cl => String(cl.courseId?._id || cl.courseId) === String(cId))
                 const hasActive    = courseClasses.some(cl => cl.isActive)
                 const myAttended   = courseClasses.filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId)))
                 const isLeaving    = unenrollLoading === cId
@@ -359,7 +377,7 @@ export default function StudentDashboard() {
               <div className="course-grid">
                 {explored.map(c => {
                   const cId    = c.id || c._id
-                  const teacher = users.find(u => (u.id || u._id) === c.teacherId)
+                  const teacher = users.find(u => String(u.id || u._id) === String(c.teacherId?._id || c.teacherId))
                   const isPending = (c.pendingStudentIds || []).map(String).includes(String(studentId))
                   return (
                     <div key={cId} className="course-card">
@@ -410,7 +428,8 @@ export default function StudentDashboard() {
                   {(classes || []).filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId))).length === 0 ? (
                     <tr><td colSpan={5}><div className="empty-state"><span className="empty-state-icon">📋</span><div className="empty-state-title">Aún no has asistido a ninguna clase</div></div></td></tr>
                   ) : (classes || []).filter(cl => (cl.attendance || []).some(a => String(a.userId) === String(studentId))).map(cl => {
-                    const course = courses.find(c => (c.id || c._id) === cl.courseId)
+                    const clCourseId = String(cl.courseId?._id || cl.courseId)
+                    const course = courses.find(c => String(c.id || c._id) === clCourseId)
                     return (
                       <tr key={cl.id || cl._id}>
                         <td><div style={{ fontWeight: 600 }}>{cl.title}</div></td>

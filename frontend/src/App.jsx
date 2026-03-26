@@ -32,47 +32,40 @@ function InnerApp() {
     return <LoginPage />
   }
 
-  // In classroom (teacher)
-  if (currentUser.role === 'teacher' && activePage === 'classroom' && activeClassId) {
-    return <ClassroomTeacher classId={activeClassId} />
-  }
-
-  // In classroom (student)
-  if (currentUser.role === 'student' && activePage === 'classroom' && activeClassId) {
-    return <ClassroomStudent classId={activeClassId} />
-  }
-
   // Normal layout with sidebar
   return (
     <div className="app-layout">
       <Sidebar />
       <div className="main-content">
-        {currentUser.role === 'admin'   && <AdminRouter   page={activePage} />}
-        {currentUser.role === 'teacher' && <TeacherRouter page={activePage} />}
-        {currentUser.role === 'student' && <StudentRouter page={activePage} />}
+        {currentUser.role === 'admin'   && <AdminRouter   page={activePage} classId={activeClassId} />}
+        {currentUser.role === 'teacher' && <TeacherRouter page={activePage} classId={activeClassId} />}
+        {currentUser.role === 'student' && <StudentRouter page={activePage} classId={activeClassId} />}
       </div>
     </div>
   )
 }
 
-function AdminRouter({ page }) {
+function AdminRouter({ page, classId }) {
   switch (page) {
     case 'users':      return <UsersPage />
     case 'courses':    return <CoursesPage />
     case 'reports':    return <ReportsPage />
     case 'enrollment': return <EnrollmentRequestsPage />
+    case 'classroom':  return classId ? <ClassroomTeacher classId={classId} /> : <AdminDashboard />
     default:           return <AdminDashboard />
   }
 }
 
-function TeacherRouter({ page }) {
+function TeacherRouter({ page, classId }) {
   switch (page) {
+    case 'classroom': return classId ? <ClassroomTeacher classId={classId} /> : <TeacherDashboard />
     default: return <TeacherDashboard />
   }
 }
 
-function StudentRouter({ page }) {
+function StudentRouter({ page, classId }) {
   switch (page) {
+    case 'classroom': return classId ? <ClassroomStudent classId={classId} /> : <StudentDashboard />
     default: return <StudentDashboard />
   }
 }

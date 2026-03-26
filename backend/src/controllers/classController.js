@@ -49,7 +49,51 @@ exports.getActive = async (req, res) => {
 // @route POST /api/classes
 exports.create = async (req, res) => {
   try {
-    const cls = await Class.create(req.body);
+    const { courseId, title, date, startTime, endTime, description } = req.body;
+
+    // 1. Check if course exists and is active
+    const Course = require('../models/Course');
+    const course = await Course.findById(courseId);
+    if (!course) return res.status(404).json({ message: 'El curso no existe.' });
+    if (course.estado !== 'Activo') {
+      return res.status(400).json({ message: 'No se pueden crear clases en un curso que no esté activo.' });
+    }
+
+    // 2. Validate mandatory fields (though model handles it, we provide better messages)
+    if (!title || !date || !startTime || !endTime) {
+      return res.status(400).json({ message: 'Todos los campos marcados con (*) son obligatorios.' });
+    }
+
+    // 3. Unique name within course
+    const existing = await Class.findOne({ courseId, title: { $regex: new RegExp(`^${title}$`, 'i') } });
+    if (existing) {
+      return res.status(400).json({ message: 'Ya existe una clase con este nombre en el curso.' });
+    }
+
+    // 4. Time validation (no past starts)
+    // Usamos el separador 'T' para que Date() lo interprete como hora local consistentemente.
+    const startDateTime = new Date(`${date}T${startTime}:00`);
+    
+    if (startDateTime < new Date()) {
+      return res.status(400).json({ message: 'La hora de inicio no puede ser anterior a la actual.' });
+    }
+
+    // 5. Time validation (endTime > startTime)
+    if (endTime <= startTime) {
+      return res.status(400).json({ message: 'La hora de fin debe ser posterior a la hora de inicio.' });
+    }
+
+    // 6. Create
+    const cls = await Class.create({
+      courseId,
+      title,
+      description,
+      date,
+      startTime,
+      endTime,
+      isActive: req.body.isActive ?? true
+    });
+
     res.status(201).json(cls);
   } catch (err) {
     res.status(400).json({ message: err.message });

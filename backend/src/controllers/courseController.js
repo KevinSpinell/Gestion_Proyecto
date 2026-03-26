@@ -139,6 +139,11 @@ exports.enrollStudent = async (req, res) => {
       return res.status(409).json({ message: 'Ya estás inscrito en este curso', alreadyEnrolled: true });
     }
 
+    // Check capacity
+    if (course.studentIds.length >= (course.maxStudents || 20)) {
+      return res.status(400).json({ message: 'Este curso ya ha alcanzado su capacidad máxima de estudiantes.' });
+    }
+
     course.studentIds.push(studentId);
     await course.save();
     res.json(course);
@@ -180,6 +185,11 @@ exports.requestEnrollment = async (req, res) => {
     const alreadyPending = (course.pendingStudentIds || []).map(String).includes(String(studentId));
     if (alreadyPending) return res.status(400).json({ message: 'Solicitud ya enviada y pendiente' });
 
+    const totalPotential = (course.studentIds.length + (course.pendingStudentIds || []).length);
+    if (totalPotential >= (course.maxStudents || 20)) {
+      return res.status(400).json({ message: 'No se pueden enviar más solicitudes. El curso está lleno o tiene demasiadas solicitudes pendientes.' });
+    }
+
     course.pendingStudentIds.push(studentId);
     await course.save();
     res.json({ message: 'Solicitud enviada correctamente', course });
@@ -201,6 +211,10 @@ exports.approveEnrollment = async (req, res) => {
     
     const alreadyIn = course.studentIds.map(String).includes(String(studentId));
     if (!alreadyIn) {
+      // Final check on capacity before approving
+      if (course.studentIds.length >= (course.maxStudents || 20)) {
+        return res.status(400).json({ message: 'No se puede aprobar la solicitud. El curso ya ha alcanzado su capacidad máxima.' });
+      }
       course.studentIds.push(studentId);
     }
     

@@ -21,7 +21,7 @@ const CourseSchema = new mongoose.Schema({
   contents:    [CourseContentSchema],
   estado:      { type: String, enum: ['Activo', 'Desactivado', 'En espera de docente', 'Pausado'], default: 'Activo' },
   tipoInscripcion: { type: String, enum: ['Abierto', 'Cerrado'], default: 'Abierto' },
-  solicitarDespausa: { type: Boolean, default: false },
+  maxStudents: { type: Number, default: 20 },
   createdAt:   { type: Date, default: Date.now },
 });
 
