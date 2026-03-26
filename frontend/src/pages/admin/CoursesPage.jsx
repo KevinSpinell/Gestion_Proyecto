@@ -22,7 +22,7 @@ export default function CoursesPage() {
   const [modal, setModal]     = useState(null)
   const [selected, setSelected] = useState(null)
   const [search, setSearch]   = useState('')
-  const [form, setForm]       = useState({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto' })
+  const [form, setForm]       = useState({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto', maxStudents: 20 })
   const [error, setError]     = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -40,7 +40,7 @@ export default function CoursesPage() {
     c.category.toLowerCase().includes(search.toLowerCase())
   )
 
-  const openCreate = () => { setForm({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto' }); setError(''); setModal('create') }
+  const openCreate = () => { setForm({ name: '', description: '', category: '', teacherId: '', estado: 'Activo', tipoInscripcion: 'Abierto', maxStudents: 20 }); setError(''); setModal('create') }
   const openEdit   = (c) => { 
     setSelected(c); 
     const currentTeacherId = c.teacherId?._id || c.teacherId || '';
@@ -50,7 +50,8 @@ export default function CoursesPage() {
       category: c.category, 
       teacherId: currentTeacherId, 
       estado: c.estado || 'Activo',
-      tipoInscripcion: c.tipoInscripcion || 'Abierto'
+      tipoInscripcion: c.tipoInscripcion || 'Abierto',
+      maxStudents: c.maxStudents || 20
     }); 
     setError(''); 
     setModal('edit') 
@@ -120,7 +121,7 @@ export default function CoursesPage() {
                 <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>{course.description}</p>
                 <div className="report-row"><span className="report-label">Categoría</span><span className="badge badge-primary">{course.category}</span></div>
                 <div className="report-row"><span className="report-label">Profesor</span><span>{teacher ? teacher.name : <span className="text-muted">Sin asignar</span>}</span></div>
-                <div className="report-row"><span className="report-label">Estudiantes</span><span className="report-value">{enrolled.length}</span></div>
+                <div className="report-row"><span className="report-label">Estudiantes</span><span className="report-value">{enrolled.length} / {course.maxStudents || 20}</span></div>
                 <div className="report-row"><span className="report-label">Clases</span><span className="report-value">{courseClasses.length}</span></div>
 
                 <div className="form-group" style={{ marginTop: 16 }}>
@@ -240,7 +241,7 @@ export default function CoursesPage() {
                         ) : <span className="badge badge-warning">Sin asignar</span>}
                       </td>
                       <td>
-                        <span className="badge badge-info">{c.studentIds.length} 👥</span>
+                        <span className="badge badge-info">{c.studentIds.length} / {c.maxStudents || 20} 👥</span>
                         {pendingCount > 0 && (
                           <span className="badge badge-danger" style={{ marginLeft: 4, fontSize: 10 }}>{pendingCount} ⏳</span>
                         )}
@@ -315,6 +316,11 @@ export default function CoursesPage() {
               <option value="Cerrado">🔒 Cerrado (Privado)</option>
             </select>
           </div>
+          <div className="form-group">
+            <label className="form-label">Capacidad Máxima (Máximo 20 estudiantes)</label>
+            <input type="number" className="form-input" value={form.maxStudents} onChange={e => setForm({ ...form, maxStudents: parseInt(e.target.value) || 0 })} min="1" max="20" />
+            <small style={{ color: 'var(--text-muted)' }}>* Límite permitido por el sistema: 20 estudiantes</small>
+          </div>
           {error && <div className="form-error">⚠️ {error}</div>}
         </Modal>
       )}
@@ -354,6 +360,11 @@ export default function CoursesPage() {
               <option value="Abierto">🔓 Abierto (Solicitud)</option>
               <option value="Cerrado">🔒 Cerrado (Privado)</option>
             </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Capacidad Máxima (Máximo 20 estudiantes)</label>
+            <input type="number" className="form-input" value={form.maxStudents} onChange={e => setForm({ ...form, maxStudents: parseInt(e.target.value) || 0 })} min="1" max="20" />
+            <small style={{ color: 'var(--text-muted)' }}>* Límite permitido por el sistema: 20 estudiantes</small>
           </div>
           {error && <div className="form-error">⚠️ {error}</div>}
         </Modal>

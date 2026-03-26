@@ -109,6 +109,7 @@ backend/src/
   contents([CourseContentSchema]), 
   estado: ['Activo', 'Desactivado', 'En espera de docente', 'Pausado'],
   solicitarDespausa: Boolean,
+  maxStudents: Number (default: 20),
   createdAt }
 ```
 
@@ -238,6 +239,7 @@ frontend/src/
 13. **Validación de Creación**: La hora de inicio no puede ser anterior a la actual, la de fin debe ser posterior a la de inicio, y la duración máxima permitida es de 4 horas.
 14. **Expulsión Universal**: Al finalizar una sesión, todos los participantes conectados son redirigidos automáticamente al panel principal.
 15. **Transcripción Acumulativa**: Se mantiene un historial persistente de lo dicho por el profesor en el chat, con auto-scroll automático para todos los usuarios.
+16. **Límite de Capacidad**: Cada curso tiene un límite máximo de **20 estudiantes**. El sistema bloquea nuevas inscripciones y solicitudes una vez alcanzado este tope.
 
 ---
 

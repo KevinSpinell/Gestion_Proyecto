@@ -71,10 +71,8 @@ exports.create = async (req, res) => {
     }
 
     // 4. Time validation (no past starts)
-    const [sh, smin] = startTime.split(':').map(Number);
-    const startDateTime = new Date(date); // This assumes YYYY-MM-DD
-    // Correct for TZ if necessary, but consistent FE/BE check:
-    startDateTime.setHours(sh, smin, 0, 0);
+    // Usamos el separador 'T' para que Date() lo interprete como hora local consistentemente.
+    const startDateTime = new Date(`${date}T${startTime}:00`);
     
     if (startDateTime < new Date()) {
       return res.status(400).json({ message: 'La hora de inicio no puede ser anterior a la actual.' });

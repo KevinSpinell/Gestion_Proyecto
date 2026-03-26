@@ -127,7 +127,8 @@ export function AppProvider({ children }) {
           id: c._id, 
           teacherId: c.teacherId?._id || c.teacherId, // Normalize if populated
           studentIds: (c.studentIds || []).map(id => id._id || id),
-          pendingStudentIds: (c.pendingStudentIds || []).map(id => id._id || id)
+          pendingStudentIds: (c.pendingStudentIds || []).map(id => id._id || id),
+          maxStudents: c.maxStudents || 20
         })))
         localStorage.removeItem('classai_courses')
       }
@@ -383,6 +384,7 @@ export function AppProvider({ children }) {
           teacherId: data.teacherId || null,
           estado: data.estado || 'Activo',
           tipoInscripcion: data.tipoInscripcion || 'Abierto',
+          maxStudents: data.maxStudents || 20,
         })
       });
       const json = await res.json();
